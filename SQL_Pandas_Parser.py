@@ -17,35 +17,42 @@ class SQL_Pandas_Parser():
     operators = {" not ":" != ", " equals ":" == ", "eq" : " = ", "neq":" != ", "lte":" <= ", "gte":" >= "}
     script = []
     tableColumnsDict = {}
+    finalTableAlias = ""
+    createTable = False
     keyWords = ['select', 'from', 'join', 'left', 'right',' inner', 'on', 'where', 'order', 'group']
 
     def __init__(self, sqlQuery):
         self.sqlQuery = sqlQuery.lower()
+        self.cleanQuery()
+        # print("updated query: ", self.sqlQuery)
+
+    def cleanQuery(self):
         if "outer join" in self.sqlQuery:
             self.sqlQuery = self.sqlQuery.replace(" outer join ", " full outer join ")
+            self.sqlQuery = self.sqlQuery.replace("\n","").strip()
+
+        if "create table" in self.sqlQuery:
+            regex = "CREATE TABLE (.*?)SELECT"
+            matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
+            for matchNum, match in enumerate(matches, start=1):
+                createClause = match.group()
+                createClauseWOSelect = createClause.replace(" as ", " ").replace("(", "").split("select")[0]
+                splits = createClauseWOSelect.split()
+                self.finalTableAlias = splits[-1]
+                self.createTable = True
+                self.sqlQuery = self.sqlQuery.replace(createClause, "")
+                if "(" == createClause.split()[-2]:
+                    self.sqlQuery = "(select " + self.sqlQuery
+                    closingBracketIndex = self.bracketStringIndex(self.sqlQuery, 0)
+                    self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
+                else:
+                    self.sqlQuery = "select " + self.sqlQuery.strip()
+        return
 
     def getQueryDict(self):
         return parse(self.sqlQuery.lower())
 
     def identifyTables(self):
-        listOfWords = self.sqlQuery.lower().split()
-        index = 0
-        for word in listOfWords:
-            if word.lower() == "from" or word.lower() == "join":
-                tableName = self.cleanTableName(listOfWords[index + 1])
-                self.tableNames.append(tableName)
-                if index + 2 > len(listOfWords):
-                    if listOfWords[index + 2] == "as":
-                        self.tableAlias[listOfWords[index + 3]] = tableName
-                    elif index + 3 == len(listOfWords):
-                        self.tableAlias[listOfWords[index + 2]] = tableName
-                    elif listOfWords[index + 3] == "join" or listOfWords[index + 3] == "on":
-                        self.tableAlias[listOfWords[index + 2]] = tableName
-
-            index += 1
-        return
-
-    def tables(self):
         queryWithTables = self.sqlQuery.split(" from ")[1]
         listOfWords = queryWithTables.split()
         tableName = self.cleanTableName(listOfWords[0])
@@ -79,7 +86,6 @@ class SQL_Pandas_Parser():
                         alias = splits[2]
                     else:
                         alias = splits[1]
-                # self.tableAlias[alias] = tableName
             elif "join" in match:
                 splits = match.split()
                 tableName = self.cleanTableName(splits[1])
@@ -133,22 +139,14 @@ class SQL_Pandas_Parser():
         self.identifyTables()
         self.identifyCaseStatements()
         self.generateCaseAlias()
-
-        # print(len(self.allCaseStatements))
-
         sqlWithoutCase = self.getSQLWithoutCase()
-
-        # print(sqlWithoutCase)
-
         select_dict = parse(sqlWithoutCase)['select']
         sql_dict = a.select_complex(select_dict)
         selectQueries = self.panda_builder("data", sql_dict)
-
         for caseStatement in self.allCaseStatements:
             caseScript = self.buildCaseQuery(caseStatement)
             for case in caseScript:
                 selectQueries.append(case)
-
         return selectQueries
 
     def generateCaseAlias(self):
@@ -196,12 +194,9 @@ class SQL_Pandas_Parser():
     def buildCaseQuery(self, caseStatement):
         self.identifyTables()
         updatedCaseStatement = self.cleanCaseStatement(caseStatement)
-        # print("case: ",caseStatement)
         conditions, results = self.caseStatementDetails(updatedCaseStatement)
         alias = ""
         caseScript = []
-        # print(sql)
-        # print(caseStatement)
         aliasPhrase = self.sqlQuery.split(caseStatement)[1].strip()
         if aliasPhrase.split(" ")[0] == "as":
             alias = aliasPhrase.split(" ")[1].strip()
@@ -230,21 +225,6 @@ class SQL_Pandas_Parser():
         return self.tableNames
 
     def identifyColumns(self):
-        regex = "\w+(?:\.\w+)"
-        matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
-        for matchNum, match in enumerate(matches, start=1):
-            column = match.group()
-            splits = column.split(".")
-            tableName = self.tableAlias[splits[0]]
-            columnName = splits[1]
-            if tableName in self.tableColumnsDict:
-                if columnName not in self.tableColumnsDict[tableName]:
-                    self.tableColumnsDict[tableName].append(columnName)
-            else:
-                self.tableColumnsDict[tableName] = [columnName]
-        return
-
-    def getColumns(self):
         query_dict = parse(self.sqlQuery)['select']
         if type(query_dict) != list:
             query_dict = [query_dict]
@@ -256,7 +236,6 @@ class SQL_Pandas_Parser():
                     self.tableColumnsDict[self.tableNames[0]] = {"*" : ""}
                 continue
             value = columnDetail['value']
-            columnDict = {}
             try:
                 alias = columnDetail['name']
             except:
@@ -274,6 +253,7 @@ class SQL_Pandas_Parser():
                 else:
                     columnName = value
                     tableName = self.tableNames[0]
+                    columnDict = {columnName: alias}
                     if tableName in self.tableColumnsDict.keys():
                         self.tableColumnsDict[tableName][columnName] = alias
                     else:
@@ -295,7 +275,7 @@ class SQL_Pandas_Parser():
 
     def selectQuery(self):
         queryScript = []
-        self.getColumns()
+        # self.getColumns()
         for table in self.tableColumnsDict.keys():
             columnDetails = self.tableColumnsDict[table]
             columnNames = list(columnDetails.keys())
@@ -313,7 +293,6 @@ class SQL_Pandas_Parser():
 
     def renameColumns(self):
         queryScript = []
-        script = ""
         for table in self.tableColumnsDict:
             columnDetails = self.tableColumnsDict[table]
             columns = list(columnDetails.keys())
@@ -330,7 +309,6 @@ class SQL_Pandas_Parser():
     def joinQuery(self):
         queryScript = []
         baseTable = ""
-        tableToMerge = ""
         from_dict = parse(self.sqlQuery)['from']
         if type(from_dict) != list:
             from_dict = [from_dict]
@@ -461,20 +439,14 @@ class SQL_Pandas_Parser():
 
 
     def getColumnName(self, column):
-        tableName = ""
-        tempColumnName = ""
         column = str(column)
-        print("col in columnName", str(column))
         if "." in column:
             splits = column.split(".")
             tableName = self.tableAlias[splits[0]]
             tempColumnName = splits[1]
         else:
-            print("col in else", column)
             tableName = self.tableNames[0]
-            print("col", column)
             tempColumnName = column
-            print("col", column)
         if tempColumnName in self.tableColumnsDict[tableName].keys():
             columnName = self.tableColumnsDict[tableName][tempColumnName]
         else:
@@ -537,7 +509,6 @@ class SQL_Pandas_Parser():
             whereConditions = query_dict['where']
             baseTable = self.tableNames[0]
             script = baseTable + " = " + baseTable + ".query('"
-            print(list(whereConditions.keys()))
             for key in list(whereConditions.keys()):
                 if "and" in whereConditions.keys():
                     conditions = whereConditions['and']
@@ -592,7 +563,6 @@ class SQL_Pandas_Parser():
     def getColumnTableNames(self, condition):
         column = condition.split(" ")[0].strip().replace("[", "").replace("]", "")
         tableName = ""
-        columnName = ""
         if "." in column:
             splits = column.split(".")
             tableName = splits[-2]
@@ -618,7 +588,6 @@ class SQL_Pandas_Parser():
         caseStatements = []
         regex = r"\bcase\b"
         matches = re.finditer(regex, sqlQuery, re.IGNORECASE)
-        cases = []
         for matchNum, match in enumerate(matches, start=1):
             caseWord = match.group()
             cases = sqlQuery.split(caseWord)[1:]
@@ -648,6 +617,17 @@ class SQL_Pandas_Parser():
                 if sum == 0:
                     return indexCount
             indexCount += 1
+        return indexCount
+
+    def createTableQuery(self):
+        queryScript = []
+        if self.createTable == True:
+            baseTable = self.tableNames[0]
+            script = self.finalTableAlias + " = " + baseTable
+            toSQLScript = "pd.to_sql(" + self.finalTableAlias + ", con = " + "SQL_ENGINE" + ", if_exists = 'replace', index = False)"
+            queryScript.append(script)
+            queryScript.append(toSQLScript)
+        return queryScript
 
     # =============================================================================
     #     Write Pandas Script
@@ -656,25 +636,35 @@ class SQL_Pandas_Parser():
     def buildPandasScript(self):
         finalScript = []
         emptyLine = ""
-        self.tables()
-        self.getColumns()
+        self.identifyTables()
+        self.identifyColumns()
         finalScript.append("import pandas as pd")
         finalScript.append("import re")
+
         finalScript.append(emptyLine)
+
         for script in self.selectQuery():
             finalScript.append(script)
         finalScript.append(emptyLine)
+
         for script in self.renameColumns():
             finalScript.append(script)
         finalScript.append(emptyLine)
+
         for script in self.joinQuery():
             finalScript.append(script)
         # case functions and UDFs
         finalScript.append(emptyLine)
         groupByScript = self.groupByQuery(self.tableNames[0])
         finalScript.append(groupByScript)
+
         orderByScript = self.orderByQuery(self.tableNames[0])
         finalScript.append(orderByScript)
+        finalScript.append(emptyLine)
+
+        for script in self.createTableQuery():
+            finalScript.append(script)
+
         return finalScript
 
     # =============================================================================
@@ -685,7 +675,7 @@ if __name__ == "__main__":
     from moz_sql_parser import parse
     import re
 
-    query = """select a aaa, b as bbb, 
+    query = """create table newTable  ( select a aaa, b as bbb, 
                 case when a = b then True when t1.m2 = t3.c then case when a = b then true else false end else False end as caseCol, 
                 t3.c t3c, t2.x2 as t2x2
                from table1 t1 
@@ -696,9 +686,10 @@ if __name__ == "__main__":
              left join table4 t4 on t4.col2 = t1.col5
                where a=1 and b!=2 or t3.c < 4
                group by b, t3.c
-               order by t2.col2, a
+               order by t2.col2, a)
                """
 
     a = SQL_Pandas_Parser(query)
+
     for s in a.buildPandasScript():
         print(s)
