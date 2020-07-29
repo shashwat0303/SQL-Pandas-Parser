@@ -503,31 +503,59 @@ class SQL_Pandas_Parser():
         return script
 
     def handleWhereClauses(self):
-        query_dict = parse(self.sqlQuery)
-        queryScript = []
-        try:
-            whereConditions = query_dict['where']
-            baseTable = self.tableNames[0]
-            script = baseTable + " = " + baseTable + ".query('"
-            for key in list(whereConditions.keys()):
-                if "and" in whereConditions.keys():
-                    conditions = whereConditions['and']
-                    for condition in conditions:
-                        script += self.handleSingleWhereClause(condition)
-                        if condition != conditions[-1]:
-                            script += " & "
-                elif "or" in whereConditions.keys():
-                    conditions = whereConditions['and']
-                    for condition in conditions:
-                        script += self.handleSingleWhereClause(condition)
-                        if condition != conditions[-1]:
-                            script += " | "
-                else:
-                    script += self.handleSingleWhereClause(whereConditions)
-            script += "')"
-            queryScript.append(script)
-        except:
-            pass
+        baseTable = self.tableNames[0]
+        whereClause = self.sqlQuery.split(' where ')[1]
+        keyWords = [' order ', ' group ', ' left ', ' right ', ' inner ', ' full outer ']
+        tempWhereClause = ""
+        matchCount = 0
+        intermediateTemp = ""
+        for word in keyWords:
+            if word in whereClause:
+                newTemp = whereClause.split(word)[0]
+                matchCount += 1
+                if tempWhereClause != "" and len(newTemp) < len(tempWhereClause):
+                    tempWhereClause = newTemp
+                elif tempWhereClause  == "" and len(newTemp) > len(tempWhereClause):
+                    tempWhereClause = newTemp
+                elif tempWhereClause == "":
+                    intermediateTemp = newTemp
+        if matchCount == 1:
+            tempWhereClause = intermediateTemp
+        tempWhereClause = tempWhereClause.replace(" and", " &").replace(" or", " | ").replace(" not", " ~")
+        listOfWords = tempWhereClause.split()
+        for word in listOfWords:
+            if "." in word:
+                columnName = self.getColumnName(word)
+                index = listOfWords.index(word)
+                listOfWords[index] = columnName
+        finalWhereClause = " ".join(listOfWords)
+        script = baseTable + " = " + baseTable + ".query('" + finalWhereClause + "')"
+        return script
+
+
+        # try:
+        #     whereConditions = query_dict['where']
+        #     baseTable = self.tableNames[0]
+        #     script = baseTable + " = " + baseTable + ".query('"
+        #     for key in list(whereConditions.keys()):
+        #         if "and" in whereConditions.keys():
+        #             conditions = whereConditions['and']
+        #             for condition in conditions:
+        #                 script += self.handleSingleWhereClause(condition)
+        #                 if condition != conditions[-1]:
+        #                     script += " & "
+        #         elif "or" in whereConditions.keys():
+        #             conditions = whereConditions['and']
+        #             for condition in conditions:
+        #                 script += self.handleSingleWhereClause(condition)
+        #                 if condition != conditions[-1]:
+        #                     script += " | "
+        #         else:
+        #             script += self.handleSingleWhereClause(whereConditions)
+        #     script += "')"
+        #     queryScript.append(script)
+        # except:
+        #     pass
         return queryScript
 
     def handleSingleWhereClause(self, clause):
@@ -655,6 +683,10 @@ class SQL_Pandas_Parser():
             finalScript.append(script)
         # case functions and UDFs
         finalScript.append(emptyLine)
+
+        whereClaseScript = self.handleWhereClauses()
+        finalScript.append(whereClaseScript)
+
         groupByScript = self.groupByQuery(self.tableNames[0])
         finalScript.append(groupByScript)
 
@@ -690,6 +722,8 @@ if __name__ == "__main__":
                """
 
     a = SQL_Pandas_Parser(query)
-
+    # a.identifyTables()
+    # a.identifyColumns()
+    # print(a.handleWhereClauses())
     for s in a.buildPandasScript():
         print(s)
