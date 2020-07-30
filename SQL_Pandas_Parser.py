@@ -17,8 +17,10 @@ class SQL_Pandas_Parser():
     operators = {" not ":" != ", " equals ":" == ", "eq" : " = ", "neq":" != ", "lte":" <= ", "gte":" >= "}
     script = []
     tableColumnsDict = {}
-    finalTableAlias = ""
+    createTableAlias = ""
+    insertTableAlias = ""
     createTable = False
+    insertTable = False
     keyWords = ['select', 'from', 'join', 'left', 'right',' inner', 'on', 'where', 'order', 'group']
 
     def __init__(self, sqlQuery):
@@ -27,9 +29,10 @@ class SQL_Pandas_Parser():
         # print("updated query: ", self.sqlQuery)
 
     def cleanQuery(self):
+        # self.sqlQuery = self.sqlQuery.replace("\n", "").strip()
+        self.sqlQuery = re.sub("\s+", " ", self.sqlQuery)
         if "outer join" in self.sqlQuery:
             self.sqlQuery = self.sqlQuery.replace(" outer join ", " full outer join ")
-            self.sqlQuery = self.sqlQuery.replace("\n","").strip()
 
         if "create table" in self.sqlQuery:
             regex = "CREATE TABLE (.*?)SELECT"
@@ -38,7 +41,7 @@ class SQL_Pandas_Parser():
                 createClause = match.group()
                 createClauseWOSelect = createClause.replace(" as ", " ").replace("(", "").split("select")[0]
                 splits = createClauseWOSelect.split()
-                self.finalTableAlias = splits[-1]
+                self.createTableAlias = splits[-1]
                 self.createTable = True
                 self.sqlQuery = self.sqlQuery.replace(createClause, "")
                 if "(" == createClause.split()[-2]:
@@ -47,6 +50,31 @@ class SQL_Pandas_Parser():
                     self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
                 else:
                     self.sqlQuery = "select " + self.sqlQuery.strip()
+
+        if "insert into" in self.sqlQuery:
+            regex = "insert into(.*?)select"
+            matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
+            for matchNum, match in enumerate(matches, start=1):
+                insertClause = match.group()
+                tempInsertClause = insertClause.replace("(", "").strip().split("select")[0]
+                splits = tempInsertClause.split()
+                self.insertTableAlias = splits[-1]
+                self.insertTable = True
+                self.sqlQuery = self.sqlQuery.replace(insertClause, "")
+                if "(" == insertClause.split()[-2]:
+                    self.sqlQuery = "(select " + self.sqlQuery
+                    closingBracketIndex = self.bracketStringIndex(self.sqlQuery, 0)
+                    self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
+                else:
+                    self.sqlQuery = "select " + self.sqlQuery.strip()
+
+        regex = "\&(.*?)[\s;]|[)]"
+        matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
+        if matches is not None:
+            for matchNum, match in enumerate(matches, start=1):
+                word = match.group()
+                newWord = word.replace("&", "")
+                self.sqlQuery = self.sqlQuery.replace(word,newWord)
         return
 
     def getQueryDict(self):
@@ -70,6 +98,7 @@ class SQL_Pandas_Parser():
         matches = re.finditer(regex, queryWithTables, re.IGNORECASE)
         for matchNum, match in enumerate(matches, start=1):
             match = match.group()
+            # print("one table:", match)
             alias = ""
             tableName = ""
             if "from" in match:
@@ -224,7 +253,62 @@ class SQL_Pandas_Parser():
         self.identifyTables()
         return self.tableNames
 
+    # def identifyColumns(self):
+    #     query_dict = parse(self.sqlQuery)['select']
+    #     if type(query_dict) != list:
+    #         query_dict = [query_dict]
+    #     # print("tables:",self.tableNames)
+    #     # print("dict:",self.tableColumnsDict)
+    #     for columnDetail in query_dict:
+    #         if columnDetail == "*":
+    #             if self.tableNames[0] in self.tableColumnsDict.keys():
+    #                 self.tableColumnsDict[self.tableNames[0]]['*'] = ""
+    #             else:
+    #                 self.tableColumnsDict[self.tableNames[0]] = {"*" : ""}
+    #             continue
+    #         value = columnDetail['value']
+    #         try:
+    #             alias = columnDetail['name']
+    #         except:
+    #             alias = ""
+    #         if type(value) == str:
+    #             if "." in value:
+    #                 tableAlias = value.split(".")[0]
+    #                 tableName = self.tableAlias[tableAlias]
+    #                 columnName = value.split(".")[1]
+    #                 columnDict = {columnName : alias}
+    #                 if tableName in self.tableColumnsDict.keys():
+    #                     self.tableColumnsDict[tableName][columnName] = alias
+    #                 else:
+    #                     self.tableColumnsDict[tableName] = columnDict
+    #             else:
+    #                 columnName = value
+    #                 tableName = self.tableNames[0]
+    #                 columnDict = {columnName: alias}
+    #                 if tableName in self.tableColumnsDict.keys():
+    #                     self.tableColumnsDict[tableName][columnName] = alias
+    #                 else:
+    #                     self.tableColumnsDict[tableName] = columnDict
+    #     regex = "\w+(?:\.\w+)"
+    #     matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
+    #     for matchNum, match in enumerate(matches, start=1):
+    #         column = match.group()
+    #         splits = column.split(".")
+    #         tableName = self.tableAlias[splits[0]]
+    #         columnName = splits[1]
+    #         columnDict = {columnName : ""}
+    #         if tableName in self.tableColumnsDict.keys():
+    #             if columnName not in self.tableColumnsDict[tableName].keys():
+    #                 self.tableColumnsDict[tableName][columnName] = ""
+    #         else:
+    #             self.tableColumnsDict[tableName] = columnDict
+    #     # print("tab alias:", self.tableAlias)
+    #     self.intermediate_select_dict()
+    #     # print("dict:", self.tableColumnsDict)
+    #     return
+
     def identifyColumns(self):
+        column_list = []
         query_dict = parse(self.sqlQuery)['select']
         if type(query_dict) != list:
             query_dict = [query_dict]
@@ -233,7 +317,7 @@ class SQL_Pandas_Parser():
                 if self.tableNames[0] in self.tableColumnsDict.keys():
                     self.tableColumnsDict[self.tableNames[0]]['*'] = ""
                 else:
-                    self.tableColumnsDict[self.tableNames[0]] = {"*" : ""}
+                    self.tableColumnsDict[self.tableNames[0]] = {"*": ""}
                 continue
             value = columnDetail['value']
             try:
@@ -245,7 +329,7 @@ class SQL_Pandas_Parser():
                     tableAlias = value.split(".")[0]
                     tableName = self.tableAlias[tableAlias]
                     columnName = value.split(".")[1]
-                    columnDict = {columnName : alias}
+                    columnDict = {columnName: alias}
                     if tableName in self.tableColumnsDict.keys():
                         self.tableColumnsDict[tableName][columnName] = alias
                     else:
@@ -258,6 +342,101 @@ class SQL_Pandas_Parser():
                         self.tableColumnsDict[tableName][columnName] = alias
                     else:
                         self.tableColumnsDict[tableName] = columnDict
+
+            elif type(value) == dict:
+                if '.' in value:
+                    column_value = value.split('.')[1]
+                    column_table = value.split('.')[0]
+                    # try:
+                    #     alias = column_dict['name']
+                    # except:
+                    #     alias = ""
+                    tableName = self.tableAlias[column_table]
+                    colsttmp = {"base_col": column_value, "Table": column_table, "Alias": alias, "table": tableName}
+                    column_list.append(colsttmp)
+                else:
+                    column_value = value
+                    final_col = []
+                    for k, v in value.items():
+                        if k == "case":
+                            pass
+                        else:
+                            udf = k
+                            cols = v
+                            if type(cols) == str:
+                                if '.' in cols:
+                                    col_name = cols.split('.')
+                                    final_col.append(col_name[1])
+                                else:
+                                    final_col.append(cols)
+                            elif type(cols) == dict:
+                                for k, v in cols.items():  ###########needs to be coded
+                                    udf = udf + "," + k
+                                    cols = v
+                                    for i in cols:
+                                        final_col.append(i)
+
+                            else:
+                                for i in cols:
+                                    if type(i) == str:
+                                        if '.' in i:
+                                            column_name = i.split('.')
+                                            col_name = column_name[1]
+                                            final_col.append(col_name)
+                                        else:
+                                            final_col.append(i)
+
+                                    elif type(i) == int:
+                                        final_col.append(i)
+
+                                    elif type(i) == dict:  ## here adjustments needs to be done
+                                        new_dict = i
+                                        for k, v in new_dict.items():
+                                            extra_udf = k
+                                            udf = udf + "," + extra_udf
+                                            cols = v
+                                            if type(cols) == list:  ## for list
+                                                for i in cols:
+                                                    if '.' in i:
+                                                        splitter = i.split('.')
+                                                        part1 = splitter[0]
+                                                        part2 = splitter[1]
+                                                        final_col.append(part2)
+                                                    else:
+                                                        final_col.append(i)
+                                            elif type(cols) == str:  ## for str
+                                                if '.' in cols:
+                                                    splitter = cols.split('.')
+                                                    part1 = splitter[0]
+                                                    part2 = splitter[1]
+                                                    final_col.append(part2)
+                                                else:
+                                                    final_col.append(cols)
+                                            elif type(cols) == dict:  ## for dict
+                                                for k, v in cols.items():
+                                                    third_udf = k
+                                                    udf = udf + "," + third_udf
+                                                    cols = v
+                                                    for i in cols:
+                                                        if '.' in i:
+                                                            splitter = i.split('.')
+                                                            part1 = splitter[0]
+                                                            part2 = splitter[1]
+                                                            final_col.append(part2)
+                                                        else:
+                                                            final_col.append(i)
+                                            else:
+                                                pass
+
+                                    else:
+                                        pass
+                        # try:
+                        #     alias = column_dict['name']
+                        # except:
+                        #     alias = ""
+                        colltmp = {"base_col": final_col, "udf": udf, "Alias": alias, "table": self.tableNames[0]}
+                        column_list.append(colltmp)
+
         regex = "\w+(?:\.\w+)"
         matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
         for matchNum, match in enumerate(matches, start=1):
@@ -265,13 +444,14 @@ class SQL_Pandas_Parser():
             splits = column.split(".")
             tableName = self.tableAlias[splits[0]]
             columnName = splits[1]
-            columnDict = {columnName : ""}
+            columnDict = {columnName: ""}
             if tableName in self.tableColumnsDict.keys():
                 if columnName not in self.tableColumnsDict[tableName].keys():
                     self.tableColumnsDict[tableName][columnName] = ""
             else:
                 self.tableColumnsDict[tableName] = columnDict
-        return
+        self.intermediate_select_dict()
+        return column_list
 
     def selectQuery(self):
         queryScript = []
@@ -279,7 +459,7 @@ class SQL_Pandas_Parser():
         for table in self.tableColumnsDict.keys():
             columnDetails = self.tableColumnsDict[table]
             columnNames = list(columnDetails.keys())
-            script = table + " = pd.read_sql(select "
+            script = table + " = pd.read_sql('select "
             if "*" in columnNames:
                 script += "*"
             else:
@@ -287,7 +467,7 @@ class SQL_Pandas_Parser():
                     script += str(column)
                     if column != columnNames[-1]:
                         script += ", "
-            script += " from " + str(table) + ")"
+            script += " from " + str(table) + "')"
             queryScript.append(script)
         return queryScript
 
@@ -448,7 +628,11 @@ class SQL_Pandas_Parser():
             tableName = self.tableNames[0]
             tempColumnName = column
         if tempColumnName in self.tableColumnsDict[tableName].keys():
-            columnName = self.tableColumnsDict[tableName][tempColumnName]
+            tempName = self.tableColumnsDict[tableName][tempColumnName]
+            if tempName == "":
+                columnName = tempColumnName
+            else:
+                columnName = tempName
         else:
             columnName = tempColumnName
         return columnName
@@ -494,69 +678,42 @@ class SQL_Pandas_Parser():
                     columnName = splits[1]
                     if self.tableColumnsDict[table][columnName] != "":
                         columnName = self.tableColumnsDict[table][columnName]
-                else:
-                    table = self.tableNames[0]
-                    if self.tableColumnsDict[table][columnName] != "":
-                        columnName = self.tableColumnsDict[table][columnName]
+                # else:
+                #     table = self.tableNames[0]
+                #     print("table to look into:", table)
+                #     if self.tableColumnsDict[table][columnName] != "":
+                #     columnName = self.tableColumnsDict[table][columnName]
                 columnsToSortOn.append(columnName)
             script = baseTable + " = " + baseTable + ".groupby(by = " + str(columnsToSortOn) + ")"
         return script
 
     def handleWhereClauses(self):
         baseTable = self.tableNames[0]
-        whereClause = self.sqlQuery.split(' where ')[1]
-        keyWords = [' order ', ' group ', ' left ', ' right ', ' inner ', ' full outer ']
-        tempWhereClause = ""
-        matchCount = 0
-        intermediateTemp = ""
-        for word in keyWords:
-            if word in whereClause:
-                newTemp = whereClause.split(word)[0]
-                matchCount += 1
-                if tempWhereClause != "" and len(newTemp) < len(tempWhereClause):
-                    tempWhereClause = newTemp
-                elif tempWhereClause  == "" and len(newTemp) > len(tempWhereClause):
-                    tempWhereClause = newTemp
-                elif tempWhereClause == "":
-                    intermediateTemp = newTemp
-        if matchCount == 1:
-            tempWhereClause = intermediateTemp
-        tempWhereClause = tempWhereClause.replace(" and", " &").replace(" or", " | ").replace(" not", " ~")
-        listOfWords = tempWhereClause.split()
-        for word in listOfWords:
-            if "." in word:
-                columnName = self.getColumnName(word)
-                index = listOfWords.index(word)
-                listOfWords[index] = columnName
-        finalWhereClause = " ".join(listOfWords)
-        script = baseTable + " = " + baseTable + ".query('" + finalWhereClause + "')"
+        script = ""
+        if " where " in self.sqlQuery:
+            whereClause = self.sqlQuery.split(' where ')[1]
+            keyWords = [' order ', ' group ', ' left ', ' right ', ' inner ', ' full outer ']
+            tempWhereClause = ""
+            matchCount = 0
+            for word in keyWords:
+                if word in whereClause:
+                    newTemp = whereClause.split(word)[0]
+                    c = tempWhereClause  == "" and len(newTemp) > len(tempWhereClause)
+                    matchCount += 1
+                    if tempWhereClause != "" and len(newTemp) < len(tempWhereClause):
+                        tempWhereClause = newTemp
+                    elif tempWhereClause  == "" and len(newTemp) > len(tempWhereClause):
+                        tempWhereClause = newTemp
+            tempWhereClause = tempWhereClause.replace(" and", " &").replace(" or", " | ").replace(" not", " ~")
+            listOfWords = tempWhereClause.split()
+            for word in listOfWords:
+                if "." in word:
+                    columnName = self.getColumnName(word)
+                    index = listOfWords.index(word)
+                    listOfWords[index] = columnName
+            finalWhereClause = " ".join(listOfWords)
+            script = baseTable + " = " + baseTable + ".query('" + finalWhereClause + "')"
         return script
-
-
-        # try:
-        #     whereConditions = query_dict['where']
-        #     baseTable = self.tableNames[0]
-        #     script = baseTable + " = " + baseTable + ".query('"
-        #     for key in list(whereConditions.keys()):
-        #         if "and" in whereConditions.keys():
-        #             conditions = whereConditions['and']
-        #             for condition in conditions:
-        #                 script += self.handleSingleWhereClause(condition)
-        #                 if condition != conditions[-1]:
-        #                     script += " & "
-        #         elif "or" in whereConditions.keys():
-        #             conditions = whereConditions['and']
-        #             for condition in conditions:
-        #                 script += self.handleSingleWhereClause(condition)
-        #                 if condition != conditions[-1]:
-        #                     script += " | "
-        #         else:
-        #             script += self.handleSingleWhereClause(whereConditions)
-        #     script += "')"
-        #     queryScript.append(script)
-        # except:
-        #     pass
-        return queryScript
 
     def handleSingleWhereClause(self, clause):
         script = ""
@@ -651,11 +808,200 @@ class SQL_Pandas_Parser():
         queryScript = []
         if self.createTable == True:
             baseTable = self.tableNames[0]
-            script = self.finalTableAlias + " = " + baseTable
-            toSQLScript = "pd.to_sql(" + self.finalTableAlias + ", con = " + "SQL_ENGINE" + ", if_exists = 'replace', index = False)"
+            script = self.createTableAlias + " = " + baseTable
+            toSQLScript = "pd.to_sql(" + self.createTableAlias + ", con = " + "SQL_ENGINE" + ", if_exists = 'replace', index = False)"
             queryScript.append(script)
             queryScript.append(toSQLScript)
         return queryScript
+
+    def insertTableQuery(self):
+        queryScript = []
+        if self.insertTable == True:
+            baseTable = self.tableNames[0]
+            script = self.insertTableAlias + " = " + baseTable
+            toSQLScript = "pd.to_sql(" + self.insertTableAlias + ", con = " + "SQL_ENGINE" + ", if_exists = 'append', index = False)"
+            queryScript.append(script)
+            queryScript.append(toSQLScript)
+        return queryScript
+
+    def handleUDFs(self, sql_dict):
+        query_list = []
+        grp_cols = []
+        query_dict = parse(self.sqlQuery)
+        if 'groupby' in query_dict.keys():
+            group_section = query_dict['groupby']
+            if type(group_section) == list:
+                for i in group_section:
+                    values = i['value']
+                    grp_cols.append(values)
+            elif type(group_section) == dict:
+                for k, v in group_section.items():
+                    grp_cols.append(v)
+        else:
+            pass
+        for list_elements in sql_dict:
+            columns = list_elements['base_col']
+            if columns != '*':
+                if columns != []:
+                    final_columns = [s for s in columns if type(s) == str]
+                    alias = list_elements['Alias']
+                    udf = list_elements['udf']
+                    tableName = self.tableNames[0]
+                    if list_elements['udf'] != '':
+                        udf_splitter = list_elements['udf'].split(',')
+                        columnNames = list_elements['base_col']
+                        len_udf = len(udf_splitter)
+                        if len_udf == 1 and udf == "coalesce":
+                            query = self.coalesce_udf(columns, tableName, alias, final_columns, len_udf)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "mul":
+                            query = self.multiplication_udf(final_columns, alias, tableName)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "sum":
+                            # query= sum_initial_udf(columns,final_df,alias)
+                            # query_list.append(query)
+                            query = self.group_by_func(tableName, query_dict, grp_cols, alias, udf, final_columns)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "year":
+                            query = self.year_month_udf(tableName, alias, udf, final_columns)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "month":
+                            query = self.year_month_udf(tableName, alias, udf, final_columns)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "literal":
+                            query = self.literals_adjust(tableName, columns, alias)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "distinct":
+                            query = self.distinct_unique(tableName, alias, udf, final_columns)
+                            query_list.append(query)
+                        elif len_udf == 1 and udf == "count":
+                            query = self.sum_initial_udf(columns, tableName, alias)
+                            query_list.append(query)
+                            query = self.group_by_func(tableName, query_dict, grp_cols, alias, udf, final_columns)
+                            query_list.append(query)
+                        elif len_udf > 1:
+                            for udf in reversed(udf_splitter):
+                                if udf == 'mul':
+                                    query = self.multiplication_udf(final_columns, alias, tableName)
+                                    query_list.append(query)
+                                elif udf == 'sum':
+                                    query = self.sum_initial_udf(columns, tableName, alias)
+                                    query_list.append(query)
+                                    query = self.group_by_func(tableName, query_dict, grp_cols, alias, udf, final_columns)
+                                    # final_df, query_dict, grp_cols, alias, columns, udf, final_columns
+                                    query_list.append(query)
+                                elif udf == "coalesce":
+                                    query = self.coalesce_udf(columns, tableName, alias, final_columns, len_udf)
+                                    query_list.append(query)
+                        # else:
+                        #     columns =list_elements['base_col']
+                        #     alias=list_elements['Alias']
+                        #     if alias!='':
+                        #         query=final_df+"['"+alias+"']"+"="+final_df+"['"+columns+"']"
+                        #         query_list.append(query)
+
+                        else:
+                            pass
+            else:
+                pass
+        return query_list
+
+    def coalesce_udf(self, columns, final_df, alias, final_columns, len_udf):
+        coalesce_filler = str(columns[-1])
+        if len_udf == 1:
+            query = final_df + "['" + alias + "']" + "=" + final_df + "." + final_columns[
+                0] + ".fillna(value=" + coalesce_filler + ',inplace=True)'
+        else:
+            query = final_df + "['" + alias + "']" + "=" + final_df + "." + alias + ".fillna(value=" + coalesce_filler + ',inplace=True)'
+        return query
+
+    # #### Multiplication
+
+    # In[4]:
+
+    def multiplication_udf(self, final_columns, alias, final_df):
+        list_of_col = ["row." + a for a in final_columns]
+        cols = '*'.join(list_of_col)
+        query = final_df + "['" + alias + "']" + "=" + final_df + '.apply(lambda row: ' + cols + ', axis = 1)'
+        return query
+
+    # #### basic sum functionality of query
+
+    # In[5]:
+
+    def sum_initial_udf(self, columns, final_df, alias):
+        columns = columns[0]
+        query = final_df + "['" + alias + "']" + "=" + final_df + "['" + columns + "']"
+        return query
+
+    # In[6]:
+
+    # def sum_initial_udf(columns,final_df,alias):
+    #     columns=columns[0]
+    #     query= final_df+"['"+alias+"']"+"="+final_df+"['"+columns+"']"
+    #     return query
+
+    # In[ ]:
+
+    # #### Year and month udf's are being handled here
+
+    # In[7]:
+
+    def group_by_func(self, final_df, query_dict, grp_cols, alias, udf, final_columns):
+        # column = columns[0]
+        grp_by = ""
+        if 'groupby' in query_dict.keys():
+            final_fcol = final_columns[0]
+            grp_by = final_df + "['" + alias + "']" + "=" + final_df + ".groupby(" + str(
+                grp_cols) + ")" + "['" + final_fcol + "']" + ".agg(" + udf + ")"
+        return grp_by
+
+
+    def year_month_udf(self, final_df, alias, udf, final_columns):
+        query = final_df + "['" + alias + "']" + "=" + final_df + "['" + final_columns[0] + "']" + ".dt." + udf + ")"
+        return query
+
+    # #### Literal
+
+    # In[8]:
+
+    def literals_adjust(self, final_df, columns, alias):
+        """add new column to pandas dataframe with default value"""
+        columns = columns[0]
+        query = final_df + "['" + alias + "']" + "=" + "'" + columns + "'"
+        return query
+
+    # #### Distinct or unique
+
+    # In[9]:
+
+    def distinct_unique(self, final_df, alias, udf, final_columns):
+        if alias == "":
+            final_fcol = final_columns[0]
+            query = final_df + "['" + final_fcol + "']" + "=" + final_df + "['" + final_fcol + "'].unique()"
+        else:
+            final_fcol = final_columns[0]
+            query = final_df + "['" + alias + "']" + "=" + final_df + "['" + final_fcol + "'].unique()"
+        return query
+
+    def grouped_columns(self):
+        list1 = []
+        query_dict = parse(self.sqlQuery)
+        # if "group by" in query_dict.keys():
+        if 'groupby' in query_dict.keys():
+            group_section = query_dict['groupby']
+            if type(group_section) == list:
+                for i in group_section:
+                    values = i['value']
+                    list1.append(values)
+            elif type(group_section) == dict:
+                for k, v in group_section.items():
+                    list1.append(v)
+        else:
+            pass
+        return list1
+
+
 
     # =============================================================================
     #     Write Pandas Script
@@ -665,9 +1011,11 @@ class SQL_Pandas_Parser():
         finalScript = []
         emptyLine = ""
         self.identifyTables()
-        self.identifyColumns()
+        column_list = self.identifyColumns()
+
+        # try:
         finalScript.append("import pandas as pd")
-        finalScript.append("import re")
+        # finalScript.append("import re")
 
         finalScript.append(emptyLine)
 
@@ -684,6 +1032,10 @@ class SQL_Pandas_Parser():
         # case functions and UDFs
         finalScript.append(emptyLine)
 
+        for script in self.handleUDFs(column_list):
+            finalScript.append(script)
+
+        finalScript.append(emptyLine)
         whereClaseScript = self.handleWhereClauses()
         finalScript.append(whereClaseScript)
 
@@ -697,7 +1049,176 @@ class SQL_Pandas_Parser():
         for script in self.createTableQuery():
             finalScript.append(script)
 
+        for script in self.insertTableQuery():
+            finalScript.append(script)
+        # except:
+            # return finalScript
+
         return finalScript
+
+    def intermediate_select_dict(self):
+        column_list = []
+        select_list = parse(self.sqlQuery)['select']
+        for column_dict in select_list:
+            if column_dict == "*":
+                pass
+            elif type(column_dict['value']) == str:
+                if '.' in column_dict['value']:
+                    column_value = column_dict['value'].split('.')[1]
+                    column_table = column_dict['value'].split('.')[0]
+                    try:
+                        alias = column_dict['name']
+                    except:
+                        alias = ""
+                    tableName = self.tableAlias[column_table]
+                    collsttmp = {"base_col": column_value, "udf": "", "Alias": alias, "table": tableName}
+                    column_list.append(collsttmp)
+                    if column_value not in self.tableColumnsDict[tableName].keys():
+                        self.tableColumnsDict[tableName][column_value] = alias
+                else:
+                    column_value = column_dict['value']
+                    column_table = ""
+                    try:
+                        alias = column_dict['name']
+                    except:
+                        alias = ""
+                    collsttmp = {"base_col": column_value, "udf": "", "Alias": alias, "table": self.tableNames[0]}
+                    tableName = self.tableNames[0]
+                    if column_value not in self.tableColumnsDict[tableName].keys():
+                        self.tableColumnsDict[tableName][column_value] = alias
+                    column_list.append(collsttmp)
+
+
+            elif type(column_dict['value']) == dict:
+                if '.' in column_dict['value']:
+                    column_value = column_dict['value'].split('.')[1]
+                    column_table = column_dict['value'].split('.')[0]
+                    try:
+                        alias = column_dict['name']
+                    except:
+                        alias = ""
+                    tableName = self.tableAlias[column_table]
+                    colsttmp = {"base_col": column_value, "Table": column_table, "Alias": alias, "table": column_table}
+                    if column_value not in self.tableColumnsDict[column_table].keys():
+                        self.tableColumnsDict[column_table][column_value] = alias
+                    column_list.append(colsttmp)
+                else:
+                    column_value = column_dict['value']
+                    final_col = []
+                    for k, v in column_dict['value'].items():
+                        if k == "case":
+                            pass
+                        else:
+                            udf = k
+                            cols = v
+                            if type(cols) == str:
+                                if '.' in cols:
+                                    col_name = cols.split('.')
+                                    final_col.append(col_name[1])
+                                    tableName = self.tableAlias[col_name[0]]
+                                    if col_name[1] not in self.tableColumnsDict[tableName].keys():
+                                        self.tableColumnsDict[tableName][col_name[1]] = ""
+                                else:
+                                    final_col.append(cols)
+                                    if cols not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                        self.tableColumnsDict[self.tableNames[0]][cols] = ""
+                            elif type(cols) == dict:
+                                for k, v in cols.items():  ###########needs to be coded
+                                    udf = udf + "," + k
+                                    for i in v:
+                                        final_col.append(i)
+                                        if i not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                            self.tableColumnsDict[self.tableNames[0]][i] = ""
+
+                            else:
+                                for i in cols:
+                                    if type(i) == str:
+                                        if '.' in i:
+                                            column_name = i.split('.')
+                                            col_name = column_name[1]
+                                            final_col.append(col_name)
+                                            tableName = self.tableAlias[col_name[0]]
+                                            if col_name[1] not in self.tableColumnsDict[tableName].keys():
+                                                self.tableColumnsDict[tableName][col_name[1]] = ""
+                                        else:
+                                            final_col.append(i)
+                                            if i not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                                self.tableColumnsDict[self.tableNames[0]][i] = ""
+
+                                    elif type(i) == int:
+                                        final_col.append(i)
+                                        if i not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                            self.tableColumnsDict[self.tableNames[0]][i] = ""
+
+                                    elif type(i) == dict:  ## here adjustments needs to be done
+                                        new_dict = i
+                                        for k, v in new_dict.items():
+                                            extra_udf = k
+                                            udf = udf + "," + extra_udf
+                                            cols = v
+                                            if type(cols) == list:  ## for list
+                                                for i in cols:
+                                                    if '.' in i:
+                                                        splitter = i.split('.')
+                                                        part1 = splitter[0]
+                                                        part2 = splitter[1]
+                                                        final_col.append(part2)
+                                                        tableName = self.tableAlias[part1]
+                                                        if part2 not in self.tableColumnsDict[tableName].keys():
+                                                            self.tableColumnsDict[tableName][part2] = ""
+                                                    else:
+                                                        final_col.append(i)
+                                                        if i not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                                            self.tableColumnsDict[self.tableNames[0]][i] = ""
+                                            elif type(cols) == str:  ## for str
+                                                if '.' in cols:
+                                                    splitter = cols.split('.')
+                                                    part1 = splitter[0]
+                                                    part2 = splitter[1]
+                                                    final_col.append(part2)
+                                                    tableName = self.tableAlias[part1]
+                                                    if part2 not in self.tableColumnsDict[tableName].keys():
+                                                        self.tableColumnsDict[tableName][part2] = ""
+                                                else:
+                                                    final_col.append(cols)
+                                                    if cols not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                                        self.tableColumnsDict[self.tableNames[0]][cols] = ""
+                                            elif type(cols) == dict:  ## for dict
+                                                for k, v in cols.items():
+                                                    third_udf = k
+                                                    udf = udf + "," + third_udf
+                                                    cols = v
+                                                    for i in cols:
+                                                        if '.' in i:
+                                                            splitter = i.split('.')
+                                                            part1 = splitter[0]
+                                                            part2 = splitter[1]
+                                                            final_col.append(part2)
+                                                            tableName = self.tableAlias[part1]
+                                                            if part2 not in self.tableColumnsDict[tableName].keys():
+                                                                self.tableColumnsDict[tableName][part2] = ""
+                                                        else:
+                                                            final_col.append(i)
+                                                            if i not in self.tableColumnsDict[self.tableNames[0]].keys():
+                                                                self.tableColumnsDict[self.tableNames[0]][i] = ""
+                                            else:
+                                                pass
+
+                                    else:
+                                        pass
+                        try:
+                            alias = column_dict['name']
+                        except:
+                            alias = ""
+                        colltmp = {"base_col": final_col, "udf": udf, "Alias": alias, "table": self.tableNames[0]}
+                        column_list.append(colltmp)
+                        # print("final col:", final_col)
+                        # if final_col not in self.tableColumnsDict[self.tableNames[0]].keys():
+                        #     self.tableColumnsDict[self.tableNames[0]][column_value] = alias
+        return column_list
+
+
+
 
     # =============================================================================
     #     FROM statement processing
@@ -707,23 +1228,107 @@ if __name__ == "__main__":
     from moz_sql_parser import parse
     import re
 
-    query = """create table newTable  ( select a aaa, b as bbb, 
-                case when a = b then True when t1.m2 = t3.c then case when a = b then true else false end else False end as caseCol, 
-                t3.c t3c, t2.x2 as t2x2
-               from table1 t1 
-               outer join table2 t2 on t1.colA = t2.colB 
-                    and t1.col3 = t2.col4 
-             right join table3 t3 on t2.col = t3.c 
-                    and t4.col2 = t1.col5 
-             left join table4 t4 on t4.col2 = t1.col5
-               where a=1 and b!=2 or t3.c < 4
-               group by b, t3.c
-               order by t2.col2, a)
-               """
+    query = """CREATE TABLE Currents AS  ( SELECT marsha  mars, stay_year, coalesce( crossover_rms,0) AS CO_RN_Goal, 
+                coalesce( ( crossover_rms*crossover_gadr),0) AS CO_Rev_Goal, def_rms AS Def_OTB, 
+                ( def_rms*def_gadr) AS Def_Rev, CID_Rms AS Target, Avg_rms AS Avg_Bkd 
+                FROM AW_TGT_BUS_DBO.OY_ANNUALCROSSOVER 
+                WHERE stay_year < &YEARNXT3 AND ASOF_YRMO=&CURYRPD; """
+                # ORDER BY marsha, stay_year);"""
+
+    query = """CREATE TABLE Futures AS  ( SELECT marsha mars, 'Futures' AS Stay_Year, 
+                coalesce( SUM( B.crossover_rms),0) AS CO_RN_Goal, 
+                coalesce( SUM( A.crossover_rms*B.def_gadr),0) AS CO_Rev_Goal, 
+                SUM(def_rms) AS Def_OTB, SUM( def_rms*def_gadr) AS Def_Rev, 
+                SUM( cid_rms) AS Target, SUM( avg_rms) AS Avg_Bkd 
+                FROM AW_TGT_BUS_DBO.OY_ANNUALCROSSOVER A
+                join table2 B on A.marsha = A.marsha
+                WHERE stay_year > &curyr AND ASOF_YRMO=&CURYRPD 
+                GROUP BY marsha ORDER BY marsha);"""
+
+    # query = """CREATE TABLE merge_CrossOver1 AS ( SELECT * ,marsha AS marsha2,
+    #             FORMAT(stay_year, VARCHAR(7)) AS stay_year , marsha2 AS marsha ,
+    #             CASE WHEN co_rev_goal=' ' OR co_rev_goal=' ' OR co_rn_goal=0 OR co_rev_goal=0
+    #             THEN 0 ELSE co_rev_goal/co_rn_goal END AS co_rn_goal_adr,
+    #             CASE WHEN def_otb=' ' OR def_rev=' ' OR def_otb=' ' OR def_rev=0
+    #             THEN 0 ELSE def_rev/def_otb END AS def_adr
+    #             FROM Currents A JOIN Futures B ON A.marsha2 = B.marsha2 AND A.stay_year = B.stay_year);"""
+
+
+    # query = """create table newTable  ( select a aaa, b as bbb,
+    #            case when a = b then True when t1.m2 = t3.c then case when a = b then true else false end else False end as caseCol,
+    #            t3.c t3c, t2.x2 as t2x2
+    #            from table1 t1
+    #            outer join table2 t2 on t1.colA = t2.colB
+    #            and t1.col3 = t2.col4
+    #            right join table3 t3 on t2.col = t3.c
+    #                 and t4.col2 = t1.col5
+    #          left join table4 t4 on t4.col2 = t1.col5
+    #            where a=1 and (b != 2 and t2.x2 = True) or t3.c < 4
+    #            group by b, t3.c
+    #            order by t2.col2, a)
+    #            """
+    # query = """INSERT INTO  Currents ( SELECT marsha, stay_year, coalesce( crossover_rms,0) AS CO_RN_Goal,
+    #         coalesce( ( crossover_rms*crossover_gadr),0) AS CO_Rev_Goal, def_rms AS Def_OTB, ( def_rms*def_gadr) AS Def_Rev,
+    #         CID_Rms AS Target, Avg_rms AS Avg_Bkd FROM AW_TGT_BUS_DBO.OY_ANNUALCROSSOVER
+    #         WHERE stay_year < YEARNXT3 AND ASOF_YRMO=CURYRPD ORDER BY marsha, stay_year);"""
+
+    # query = """select  marsha, stay_year, def_rms as def_otb,
+    #         cid_rms as target, avg_rms as avg_bkd from aw_tgt_bus_dbo.oy_annualcrossover
+    #         where stay_year < yearnxt3 and asof_yrmo=curyrpd order by marsha, stay_year"""
+
+    # query =  """select a.col1, a.*, a.col2, * from table1 a join table2 b on b.col1 = b.col2"""
+
+    # print(parse(query))
+
+    query = """create table newTable SELECT sum(B.alpha) as alpha1,
+        coalesce( A.crossover_rms,0) as CO_RN_Goal,
+        coalesce( ( A.crossover_rms*B.crossover_gadr),0) as CO_Rev_Goal,
+        A.marsha as MARS,
+        A.stay_year as stay_year_REN,
+        A.CO_RN_Goal,
+        A.CO_Rev_Goal,
+        A.CO_RN_Goal_ADR,
+        A.Def_OTB,
+        A.Def_REV,
+        A.Def_ADR,
+        A.Target,
+        A.Avg_Bkd
+        FROM tableA A
+        left join tableB B
+        on A.marsha = B.marsha and A.marsha1 = B.marsha1
+        outer join tableC C
+        on A.marsha = C.marsha and A.marsha1 = C.marsha1
+        Where A.Target=1
+        and A.Target in (1,2,3,4)
+        and A.Avg_Bkd="ABCD"
+    	group by
+        crossover_rms,
+    	crossover_gadr,marsha,
+    	stay_year,
+    	CO_RN_Goal,
+    	CO_Rev_Goal,
+    	CO_RN_Goal_ADR,
+    	Def_OTB,
+    	Def_REV,
+    	Def_ADR,
+    	Target,
+    	Avg_Bkd
+    	order by
+        A.marsha,A.Avg_Bkd"""
 
     a = SQL_Pandas_Parser(query)
     # a.identifyTables()
     # a.identifyColumns()
+    # print(a.tableColumnsDict)
+    # print("query: ",a.sqlQuery)
+    # print(parse(a.sqlQuery))
+    # a.identifyTables()
+    # a.identifyColumns()
     # print(a.handleWhereClauses())
+    fileName = "query.py"
+    f =  open(fileName, 'w')
+    f.write('"""Query: ' + query + '"""\n\n')
     for s in a.buildPandasScript():
-        print(s)
+        f.write(s)
+        f.write("\n")
+    f.close()
