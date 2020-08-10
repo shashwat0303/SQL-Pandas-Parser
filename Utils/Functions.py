@@ -1,74 +1,7 @@
 
 # Author: Shashwat Koranne
 
-# This class defines methods to identify different
-# statements from the given SQL query
-
-# class Functions():
-
-#     sqlQuery = ""
-#     queryDict = {}
-#     createTableAlias = ""
-#     insertTableAlias = ""
-#     createTable = False
-#     insertTable = False
-#
-#     def __init__(self, sqlQuery):
-#         self.sqlQuery = sqlQuery
-#         self.cleanQuery()
-#         self.queryDict = parse(self.sqlQuery)
-
-# def cleanQuery(self):
-#     # Remove extra spaces from the query
-#     self.sqlQuery = re.sub("\s+", " ", self.sqlQuery)
-#     if "outer join" in self.sqlQuery:
-#         self.sqlQuery = self.sqlQuery.replace(" outer join ", " full outer join ")
-#
-#     # Remove create table clause from the query as moz sql parser cant handle it
-#     if "create table" in self.sqlQuery:
-#         regex = "CREATE TABLE (.*?)SELECT"
-#         matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
-#         for matchNum, match in enumerate(matches, start=1):
-#             createClause = match.group()
-#             createClauseWOSelect = createClause.replace(" as ", " ").replace("(", "").split("select")[0]
-#             splits = createClauseWOSelect.split()
-#             self.createTableAlias = splits[-1]
-#             self.createTable = True
-#             self.sqlQuery = self.sqlQuery.replace(createClause, "")
-#             if "(" == createClause.split()[-2]:
-#                 self.sqlQuery = "(select " + self.sqlQuery
-#                 closingBracketIndex = self.bracketStringIndex(self.sqlQuery, 0)
-#                 self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
-#             else:
-#                 self.sqlQuery = "select " + self.sqlQuery.strip()
-#
-#     # Remove insert table clause from the query as moz sql parser cant handle it
-#     if "insert into" in self.sqlQuery:
-#         regex = "insert into(.*?)select"
-#         matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
-#         for matchNum, match in enumerate(matches, start=1):
-#             insertClause = match.group()
-#             tempInsertClause = insertClause.replace("(", "").strip().split("select")[0]
-#             splits = tempInsertClause.split()
-#             self.insertTableAlias = self.cleanTableName(splits[-1])
-#             self.insertTable = True
-#             self.sqlQuery = self.sqlQuery.replace(insertClause, "")
-#             if "(" == insertClause.split()[-2]:
-#                 self.sqlQuery = "(select " + self.sqlQuery
-#                 closingBracketIndex = self.bracketStringIndex(self.sqlQuery, 0)
-#                 self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
-#             else:
-#                 self.sqlQuery = "select " + self.sqlQuery.strip()
-#
-#     # Remove '&' from the query as it shows up during SAS conversion as moz sql parser cant handle it
-#     regex = "\&(.*?)[\s;]|[)]"
-#     matches = re.finditer(regex, self.sqlQuery, re.IGNORECASE)
-#     if matches is not None:
-#         for matchNum, match in enumerate(matches, start=1):
-#             word = match.group()
-#             newWord = word.replace("&", "")
-#             self.sqlQuery = self.sqlQuery.replace(word, newWord)
-#     return
+OPERATORS = ['eq', 'lt', 'gt', 'lte', 'gte']
 
 def addColumnToTable(columnName, tableColumsDict, tableAliases, baseTable, columnAlias):
     if "." in columnName:
@@ -126,6 +59,55 @@ def trace(colList, index, tableColumsDict, tableAliases, baseTable, columnAlias)
         exploreDict(dataStructure, tableColumsDict, tableAliases, baseTable, columnAlias)
     index = index + 1
     trace(colList, index, tableColumsDict, tableAliases, baseTable, columnAlias)
+
+
+def cleanColumnName(columName, tablesAliases, tableColumnsDict, tableNames):
+    if "." in columName:
+        splits = columName.aplit(".")
+        tableAlias = splits[0]
+        columName = splits[1]
+        tableName = tablesAliases[tableAlias]
+        columnAlias = tableColumnsDict[tableName][columName]
+    else:
+        tableName = tableNames[0]
+        columnAlias = tableColumnsDict[tableName][columName]
+    if columnAlias != "":
+        return columnAlias, tableNames.index(tableName)
+    else:
+        return columName, tableNames.index(tableName)
+
+
+def joinStatement(dataStructure, listOfCols):
+    if type(dataStructure) == dict:
+        if len(dataStructure.keys()) == 1 and list(dataStructure.keys())[0] in OPERATORS:
+            operator = list(dataStructure.keys())[0]
+            columns = dataStructure[operator]
+            listOfCols.append(columns)
+        else:
+            joinStatement(list(dataStructure.values())[0], listOfCols)
+    elif type(dataStructure) == list:
+        listIter(dataStructure, listOfCols, 0)
+    return listOfCols
+
+
+def listIter(listToIter, listOfCols, index):
+    if index >= len(listToIter):
+        return
+    else:
+        if type(listToIter[index]) == dict:
+            joinStatement(listToIter[index], listOfCols)
+        else:
+            listOfCols.append(listToIter[index])
+        index = index + 1
+        listIter(listToIter, listOfCols, index)
+
+
+
+
+
+
+
+
 
 
 def exploreDict1(dataStructure, columnList):
@@ -190,6 +172,10 @@ def bracketStringIndex(sql, start):
         indexCount += 1
     return indexCount
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     from moz_sql_parser import parse
     import re
+
+d = {'or': [{'and': [{'eq': ['a.marsha', 'b.marsha']}, {'eq': ['a.marsha1', 'b.marsha1']}]}, {'lte': ['a.marsha2', 'b.marsha2']}]}
+
+print(joinStatement(d, []))
