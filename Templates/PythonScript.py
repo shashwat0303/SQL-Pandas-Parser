@@ -16,7 +16,7 @@ class PythonScript():
     # This methods imports the relevant packages as will be
     # needed by the python script to process SQL Query
     #
-    def importPackage(impPkg, alias="", frmPkg=""):
+    def importPackage(self, impPkg, alias="", frmPkg=""):
         if frmPkg == "":
             if alias == "":
                 return "import " + impPkg
@@ -32,11 +32,11 @@ class PythonScript():
     # This methods reads and imports all the columns needed for the Pandas processing
     # of the given SQL Query
     #
-    def readPandasDFs(tableColumnsDict):
+    def readPandasDFs(self):
         finalScript = []
-        tables = tableColumnsDict.keys()
+        tables = self.tableColumnsDict.keys()
         for table in tables:
-            columns = list(tableColumnsDict[table].keys())
+            columns = list(self.tableColumnsDict[table].keys())
             sqlScript = "select " + ", ".join(columns) + " from " + table
             script = table + " = pd.read_sql(" + sqlScript + ")"
             finalScript.append(script)
@@ -46,14 +46,14 @@ class PythonScript():
     # This methods renames the columns of the respective tables
     # based on the aliases mentioned in the SQL Query
     #
-    def renameColumns(tableColumnsDict):
+    def renameColumns(self):
         finalScript = []
-        tables = tableColumnsDict.keys()
+        tables = self.tableColumnsDict.keys()
         for table in tables:
-            columns = list(tableColumnsDict[table].keys())
+            columns = list(self.tableColumnsDict[table].keys())
             renameDict = {}
             for column in columns:
-                columnAlias = tableColumnsDict[table][column]
+                columnAlias = self.tableColumnsDict[table][column]
                 if columnAlias != "":
                     renameDict[column] = columnAlias
             script = table + " = " + table + ".rename(columns = " + str(renameDict) + ")"
@@ -64,7 +64,7 @@ class PythonScript():
     # This methods builds the merge script for pandas to join multiple
     # Dataframes together imported from SQL
     #
-    def joinPandasDFs(self, sqlQuery):
+    def joinPandasDFs(self):
         finalScript = []
         fromCols = self.queryObject.queryDict['from']
         if len(fromCols) > 1:
