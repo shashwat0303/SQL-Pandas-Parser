@@ -63,7 +63,7 @@ def trace(colList, index, tableColumsDict, tableAliases, baseTable, columnAlias)
 
 def cleanColumnName(columName, tablesAliases, tableColumnsDict, tableNames):
     if "." in columName:
-        splits = columName.aplit(".")
+        splits = columName.split(".")
         tableAlias = splits[0]
         columName = splits[1]
         tableName = tablesAliases[tableAlias]
@@ -101,55 +101,6 @@ def listIter(listToIter, listOfCols, index):
         index = index + 1
         listIter(listToIter, listOfCols, index)
 
-
-
-
-
-
-
-
-
-
-def exploreDict1(dataStructure, columnList):
-    if type(dataStructure) == str:
-        if dataStructure not in columnList: columnList.append(dataStructure)
-        return
-    elif type(dataStructure) == list:
-        return trace(dataStructure, 0, columnList)
-    elif type(dataStructure) == dict:
-        if 'then' in dataStructure.keys():
-            if type(dataStructure['then']) != dict:
-                del dataStructure['then']
-        key = list(dataStructure.keys())[0]
-        if type(dataStructure[key]) == str:
-            newDataStructure = str(list(dataStructure.values())[0])
-        else:
-            newDataStructure = list(*dataStructure.values())
-        if "case" in dataStructure.keys():
-            newDataStructure = newDataStructure[:-1]
-        return exploreDict(newDataStructure, columnList)
-
-def trace1(colList, index, columnList):
-    if index >= len(colList):
-        return
-    if type(colList[index]) == list:
-        trace(colList[index], index, columnList)
-    elif type(colList[index]) != dict:
-        if type(colList[index]) != int:
-            if colList[index] not in columnList: columnList.append(colList[index])
-    else:
-        if 'then' in colList[index].keys():
-            if type(colList[index]['then']) != dict:
-                del colList[index]['then']
-        dataStructure = list(colList[index].values())
-        if len(dataStructure) == 1:
-            dataStructure = dataStructure[0]
-        if "case" in colList[index].keys():
-            dataStructure = dataStructure[:-1]
-        exploreDict(dataStructure, columnList)
-    index = index + 1
-    trace(colList, index, columnList)
-
 def cleanTableName(tableName):
     if '.' in tableName:
         if '[' in tableName:
@@ -172,10 +123,69 @@ def bracketStringIndex(sql, start):
         indexCount += 1
     return indexCount
 
-# if __name__ == '__main__':
-    from moz_sql_parser import parse
-    import re
+def renameColName(columnList, colName, tableColumnsDict, tableNames, tablesAliases):
+    if type(colName) == str and "." not in colName:
+        if colName in columnList:
+            if tableColumnsDict[tableNames[0]][colName] != "":
+                return tableColumnsDict[tableNames[0]][colName]
+            else:
+                return colName
+    elif type(colName) == str and "." in colName:
+        colName, tableNum = cleanColumnName(colName, tablesAliases, tableColumnsDict, tableNames)
+    elif type(colName) == list:
+        return str(tuple(colName))
+    return colName
 
-d = {'or': [{'and': [{'eq': ['a.marsha', 'b.marsha']}, {'eq': ['a.marsha1', 'b.marsha1']}]}, {'lte': ['a.marsha2', 'b.marsha2']}]}
+def performAction(operator, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases):
+    lhs = renameColName(columnList, lhs, tableColumnsDict, tableNames, tablesAliases)
+    rhs = renameColName(columnList, rhs, tableColumnsDict, tableNames, tablesAliases)
+    if type(lhs) != str and type(lhs) != int: lhs = "'" + str(lhs) + "'"
+    if type(rhs) != str and type(rhs) != int: rhs = "'" + str(rhs) + "'"
+    if operator == "in":
+        return str(lhs) + " in " + str(rhs)
+    elif operator == "eq":
+        return str(lhs) + " == " + str(rhs)
+    return
 
-print(joinStatement(d, []))
+def handleOperator(operator, conditionList):
+    script = ""
+    if conditionList != None:
+        if operator == "and":
+            for condition in conditionList:
+                script += condition
+                if condition != conditionList[-1]:
+                    script += " & "
+            return script
+        elif operator == "or":
+            for condition in conditionList:
+                script += condition
+                if condition != conditionList[-1]:
+                    script += " | "
+            return script
+    return []
+
+def handleWhereClause(dataStructure, columnList, tableColumnsDict, tableNames, tablesAliases):
+    if type(dataStructure) == dict:
+        key = list(dataStructure.keys())[0]
+        value = dataStructure[key]
+        if type(value[0]) == str:
+            lhs = value[0]
+            rhs = value[1]
+            script = performAction(key, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases)
+            return script
+        else:
+            whereConditions = whereList(value, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases)
+            script = handleOperator(key, whereConditions)
+    else:
+        script = whereList(dataStructure, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases)
+
+    return script
+
+def whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases):
+    if index >= len(listData):
+        return
+    else:
+        scriptList.append(handleWhereClause(listData[index], columnList, tableColumnsDict, tableNames, tablesAliases))
+        index = index + 1
+        whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases)
+    return scriptList
