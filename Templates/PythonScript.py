@@ -103,7 +103,8 @@ class PythonScript():
     def whereClausePandasDF(self):
         baseTable = self.tableNames[0]
         whereCondition = self.queryObject.queryDict['where']
-        script = handleWhereClause(whereCondition, self.queryObject.columnList, self.tableColumnsDict, self.tableNames, self.tableAliases)
+        script = handleWhereClause(whereCondition, self.queryObject.columnList, self.tableColumnsDict, self.tableNames,
+                                   self.tableAliases)
         whereScript = baseTable + " = " + baseTable + ".query('" + script + "')"
         return whereScript
 
@@ -117,7 +118,8 @@ class PythonScript():
         baseTable = self.tableNames[0]
         for col in groupCols:
             columnName = col['value']
-            updatedColumn, tabelNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict, self.tableNames)
+            updatedColumn, tabelNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict,
+                                                      self.tableNames)
             columns.append(updatedColumn)
         script = baseTable + " = " + baseTable + ".groupby(by = " + str(columns) + ")"
         return script
@@ -132,7 +134,8 @@ class PythonScript():
         baseTable = self.tableNames[0]
         for col in groupCols:
             columnName = col['value']
-            updatedColumn, tableNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict, self.tableNames)
+            updatedColumn, tableNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict,
+                                                      self.tableNames)
             columns.append(updatedColumn)
         script = baseTable + ".sort_values(by = " + str(columns) + ", inplace = True)"
         return script
@@ -141,15 +144,17 @@ class PythonScript():
     # This methods identifies nested UDFs if any within the select clause
     # and returns an equivalent pandas script for the same
     #
-    def udf(self, dataStructure):
+    def handleUDFStatements(self, dataStructure):
         finalScript = []
         details = dataStructure['value']
         columnAlias = dataStructure['name']
-        udfList = handleUDFs(details, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases, self.tableColumnsDict, [])
+        udfList = handleUDFs(details, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases,
+                             self.tableColumnsDict, [])
         for udf in udfList:
             key = list(udf.keys())[0]
             colList = udf[key]
-            script = udfScript(key, colList, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases, self.tableColumnsDict)
+            script = udfScript(key, colList, self.queryObject.columnList, columnAlias, self.tableNames,
+                               self.tableAliases, self.tableColumnsDict)
             finalScript.append(script)
         return finalScript
 
@@ -166,13 +171,95 @@ class PythonScript():
                 dataStructure = col
                 columnAlias = col['name']
                 case = dataStructure['value']
-                condList, resList = handleCases(case, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases, self.tableColumnsDict, [], [])
-                for i in range(len(resList)-1, -1, -1):
+                condList, resList = handleCases(case, self.queryObject.columnList, columnAlias, self.tableNames,
+                                                self.tableAliases, self.tableColumnsDict, [], [])
+                for i in range(len(resList) - 1, -1, -1):
                     if i == len(resList) - 1:
                         script = baseTable + "['" + columnAlias + "'] = " + resList[-1]
                     else:
                         script = baseTable + "['" + columnAlias + "'].iloc[" + condList[i] + "] = " + resList[i]
                     finalScript.append(script)
+        return finalScript
+
+    def buildPandasScript(self):
+        finalScript = []
+        extraLine = ""
+
+        pandasImport = self.importPackage("pandas", 'pd')
+        finalScript.append(pandasImport)
+        finalScript.append(extraLine)
+
+        readScripts = self.readPandasDFs()
+        for readScript in readScripts:
+            finalScript.append(readScript)
+        finalScript.append(extraLine)
+
+        renameScripts = self.renameColumns()
+        for renameScript in renameScripts:
+            finalScript.append(renameScript)
+        finalScript.append(extraLine)
+
+        mergeScripts = self.joinPandasDFs()
+        for mergeScript in mergeScripts:
+            finalScript.append(mergeScript)
+        finalScript.append(extraLine)
+
+        groupScripts = self.groupPandasDFs()
+        for groupScript in groupScripts:
+            finalScript.append(groupScript)
+        finalScript.append(extraLine)
+
+        udfs = self.handleUDFStatements()
+        for udf in udfs:
+            finalScript.append(udf)
+        finalScript.append(extraLine)
+
+        cases = self.handleCaseStatements()
+        for case in cases:
+            finalScript.append(case)
+        finalScript.append(extraLine)
+
+        whereClauses = self.whereClausePandasDF()
+        for whereClause in whereClauses:
+            finalScript.append(whereClause)
+        finalScript.append(extraLine)
+
+        orderScripts = self.orderPandasDFs()
+        for orderScript in orderScripts:
+            finalScript.append(orderScript)
+        finalScript.append(extraLine)
+
+        createScripts = self.createTableScript()
+        for createScript in createScripts:
+            finalScript.append(createScript)
+        finalScript.append(extraLine)
+
+        insertScripts = self.insertTableScript()
+        for insertScript in insertScripts:
+            finalScript.append(insertScript)
+        finalScript.append(extraLine)
+
+        return finalScript
+
+
+
+
+    def createTableScript(self):
+        finalScript = []
+        if self.queryObject.createTable:
+            script = self.queryObject.createTableAlias + " = " + self.tableNames[0]
+            finalScript.append(script)
+            script = "pd.to_sql(" + self.queryObject.createTableAlias + ", con = " + "SQL_ENGINE" + ", if_exists = " + "'replace', index = False)"
+            finalScript.append(script)
+        return finalScript
+
+    def insertTableScript(self):
+        finalScript = []
+        if self.queryObject.insertTable:
+            script = self.queryObject.insertTableAlias + " = " + self.tableNames[0]
+            finalScript.append(script)
+            script = "pd.to_sql(" + self.queryObject.insertTableAlias + ", con = " + "SQL_ENGINE" + ", if_exists = " + "'append', index = False)"
+            finalScript.append(script)
         return finalScript
 
 

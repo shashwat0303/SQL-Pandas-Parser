@@ -1,19 +1,23 @@
+from Templates.PythonScript import PythonScript
 
-class SQL_Parser():
+
+class SQL_Pandas_Parser(PythonScript):
 
     def __init__(self, sqlQuery):
-        self.sqlQuery = str(sqlQuery.lower())#encode('ascii', 'ignore'))
-        self.queryDict = parse(self.sqlQuery)
+        super().__init__(sqlQuery)
 
 
 if __name__ == '__main__':
 
-    from moz_sql_parser import parse
-    from Utils import cleanTableName, bracketStringIndex
-    import re
+    import pandas as pd
+    import numpy as np
+    sqlQueries = pd.read_csv("sqlqueries.csv")
+    queries = np.array(sqlQueries['SQL'])
+    fileNames = np.array(sqlQueries['filename'])
 
-    query = """SELECT a,b FROM table as A"""
-    # print(type(query))
-
-    a = SQL_Parser(query)
-    print(type(a.queryDict['select'][0]['value']))
+    for i in range(len(queries)):
+        spp = SQL_Pandas_Parser(queries[i])
+        scripts = spp.buildPandasScript()
+        with open(fileNames[i] + ".py", 'a') as f:
+            for script in scripts:
+                f.write(script)
