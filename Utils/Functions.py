@@ -16,6 +16,8 @@ def addColumnToTable(columnName, tableColumsDict, tableAliases, baseTable, colum
     if tableName in tableColumsDict.keys():
         if columnName not in tableColumsDict[tableName].keys():
             tableColumsDict[tableName][columnName] = columnAlias
+        elif columnAlias != "" and columnName in tableColumsDict[tableName].keys():
+            tableColumsDict[tableName][columnName] = columnAlias
     else:
         tableColumsDict[tableName] = columnDict
 
@@ -249,3 +251,13 @@ def udfIter(dataStructure, columnList, columnAlias, tableNames, tableAliases, ta
         index = index + 1
         udfIter(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList, index)
     return udfList, dataStructure
+
+
+# def handleCases(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList):
+#     if type(dataStructure) == dict:
+#         dictValues = list(dataStructure.values())[0]
+#         dictKeys = list(dataStructure.values())[0]
+#         if "then" in dictKeys and type(dataStructure['then']) != dict:
+
+        # if type(dictValue) == list and type(dictValue) == str:
+        #     if dictKey in OPERATORS:
