@@ -13,6 +13,7 @@ class PythonScript():
         self.queryObject.identifyColumns()
         self.tableNames = self.queryObject.tableNames
         self.tableColumnsDict = self.queryObject.tableColumnsDict
+        print(self.tableColumnsDict)
         self.tableAliases = self.queryObject.tableAliases
 
     #
@@ -137,12 +138,28 @@ class PythonScript():
         script = baseTable + ".sort_values(by = " + str(columns) + ", inplace = True)"
         return script
 
+    #
+    # This methods identifies nested UDFs if any within the select clause
+    # and returns an equivalent pandas script for the same
+    #
+    def udf(self, dataStructure):
+        finalScript = []
+        details = dataStructure['value']
+        columnAlias = dataStructure['name']
+        udfList = handleUDFs(details, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases, self.tableColumnsDict, [])
+        for udf in udfList:
+            key = list(udf.keys())[0]
+            colList = udf[key]
+            script = udfScript(key, colList, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases, self.tableColumnsDict)
+            finalScript.append(script)
+        return finalScript
+
 if __name__ == '__main__':
 
     query = """create table newTable SELECT count(B.alpha) as alpha1,
                 coalesce( A.crossover_rms,0) as CO_RN_Goal,
-                coalesce( ( A.crossover_rms*B.crossover_gadr),0) as CO_Rev_Goal,
-                case when a.table_col_1 =b.table_col_2 and table_col_4< table_col_5 or table_col_6>=table_col_7 then True when c.table_col_1< 0 then true else false end as newCol,
+                coalesce( ( sum(A.crossover_rms)*B.crossover_gadr*A.crossover_rms),0) as CO_Rev_Goal,
+                case when a.table_col_1 =b.table_col_2 and table_col_4< table_col_5 then True when c.table_col_1< 0 then true else false end as newCol,
                 A.marsha as MARS,
                 c.avg_bkd as renamedColumn,
                 A.stay_year as stay_year_REN,
@@ -160,8 +177,8 @@ if __name__ == '__main__':
                 outer join tableC C
                 on A.marsha = C.marsha and A.marsha1 = C.marsha1
                 Where A.Target=1
-                and C.Target in (1,2,3,4)
-                or c.Avg_Bkd="ABCD"
+                and A.Target in (1,2,3,4)
+                or c.Avg_Bkd="ABCD" and b.marsha = ""
             	group by
                 crossover_rms,
             	crossover_gadr,marsha,
@@ -178,4 +195,12 @@ if __name__ == '__main__':
                 A.marsha,A.Avg_Bkd"""
 
     p = PythonScript(query)
-    print(p.whereClausePandasDF())
+    # for a in p.queryObject.queryDict['select']:
+    #     if type(a['value']) == dict:
+    #
+    u = p.queryObject.queryDict['select'][2]
+    for a in p.udf(u):
+        print(a)
+    # print(p.queryObject.tableAliases)
+    # print(p.queryObject.tableColumnsDict)
+    # print(p.whereClausePandasDF())

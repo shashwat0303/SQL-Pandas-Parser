@@ -3,7 +3,7 @@
 
 OPERATORS = ['eq', 'lt', 'gt', 'lte', 'gte']
 
-def addColumnToTable(columnName, tableColumsDict, tableAliases, baseTable, columnAlias):
+def addColumnToTable(columnName, tableColumsDict, tableAliases, baseTable, columnAlias=""):
     if "." in columnName:
         splits = columnName.split(".")
         tableAlias = splits[0]
@@ -123,15 +123,26 @@ def bracketStringIndex(sql, start):
         indexCount += 1
     return indexCount
 
-def renameColName(columnList, colName, tableColumnsDict, tableNames, tablesAliases):
+def renameColName(columnList, colName, tableColumnsDict, tableNames, tablesAliases, code = ""):
+    if colName == "":
+        return '""'
     if type(colName) == str and "." not in colName:
         if colName in columnList:
-            if tableColumnsDict[tableNames[0]][colName] != "":
-                return tableColumnsDict[tableNames[0]][colName]
+            updatedColumn = tableColumnsDict[tableNames[0]][colName]
+            if updatedColumn != "":
+                if code == "case":
+                    return tableNames[0] + "[" + updatedColumn + "]"
+                return updatedColumn
             else:
+                if code == "case":
+                    return tableNames[0] + "[" + colName + "]"
                 return colName
+        else:
+            return '"' + colName + '"'
     elif type(colName) == str and "." in colName:
         colName, tableNum = cleanColumnName(colName, tablesAliases, tableColumnsDict, tableNames)
+        if code == "case":
+            return tableNames[0] + "[" + colName + "]"
     elif type(colName) == list:
         return str(tuple(colName))
     return colName
@@ -189,3 +200,52 @@ def whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNa
         index = index + 1
         whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases)
     return scriptList
+
+
+def udfScript(operator, colList, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict):
+    updatedColList = []
+    baseTable = tableNames[0]
+    script = ""
+    if operator == "mul":
+        for col in colList:
+            updatedColumn = renameColName(columnList, col, tableColumnsDict, tableNames, tableAliases, code = "case")
+            updatedColList.append(updatedColumn)
+        product = " * ".join(updatedColList)
+        script = baseTable + "['" + columnAlias + "'] = " + product
+    elif operator == "coalesce":
+        updatedColumn = renameColName(columnList, colList[0], tableColumnsDict, tableNames, tableAliases)
+        script = baseTable + "['" + columnAlias + "'] = " + baseTable + "['" + updatedColumn + "'].fillna(value = " + str(colList[1]) + ")"
+    elif operator == "sum":
+        updatedColumn = renameColName(columnList, colList, tableColumnsDict, tableNames, tableAliases)
+        script = baseTable + "['" + columnAlias + "'] = " + baseTable + "['" + updatedColumn + "'].sum()"
+    return script
+
+
+def handleUDFs(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList):
+    if type(dataStructure) == dict:
+        updatedDataStructure = list(dataStructure.values())[0]
+        if (type(updatedDataStructure) == list and type(updatedDataStructure[0]) != dict) or type(updatedDataStructure) == str:
+            if dataStructure not in udfList: udfList.append(dataStructure)
+        elif type(updatedDataStructure) == list and type(updatedDataStructure[0]) == dict:
+            key = list(dataStructure.keys())[0]
+            udfList, dataStructure = udfIter(updatedDataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList, 0)
+            updatedDataStructure = {key : dataStructure}
+            handleUDFs(updatedDataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict,
+                       udfList)
+        elif type(updatedDataStructure) == dict:
+            handleUDFs(updatedDataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList)
+    elif type(dataStructure) == list:
+        udfList, dataStructure = udfIter(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList, 0)
+    return udfList
+
+
+def udfIter(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList, index):
+    if index >= len(dataStructure):
+        return
+    else:
+        handleUDFs(dataStructure[index], columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList)
+        if dataStructure[index] in udfList:
+            dataStructure[index] = columnAlias
+        index = index + 1
+        udfIter(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList, index)
+    return udfList, dataStructure
