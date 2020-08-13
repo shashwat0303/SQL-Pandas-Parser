@@ -1,7 +1,9 @@
 
 # Author: Shashwat Koranne
 
-OPERATORS = ['eq', 'lt', 'gt', 'lte', 'gte']
+OPERATORS = ['eq', 'lt', 'gt', 'lte', 'gte', 'and', 'or']
+
+operatorSymbols = {'eq':' == ', 'lt':' < ', 'gt':' > ', 'lte':' <= ', 'gte':' >= ', 'and':' & ', 'or':' | '}
 
 def addColumnToTable(columnName, tableColumsDict, tableAliases, baseTable, columnAlias=""):
     if "." in columnName:
@@ -28,7 +30,6 @@ def exploreDict(dataStructure, tableColumsDict, tableAliases, baseTable, columnA
     elif type(dataStructure) == list:
         return trace(dataStructure, 0, tableColumsDict, tableAliases, baseTable, columnAlias)
     elif type(dataStructure) == dict:
-        # keys = list(dataStructure.keys())
         if 'then' in dataStructure.keys():
             if type(dataStructure['then']) != dict:
                 del dataStructure['then']
@@ -133,74 +134,77 @@ def renameColName(columnList, colName, tableColumnsDict, tableNames, tablesAlias
             updatedColumn = tableColumnsDict[tableNames[0]][colName]
             if updatedColumn != "":
                 if code == "case":
-                    return tableNames[0] + "[" + updatedColumn + "]"
+                    return tableNames[0] + "['" + updatedColumn + "']"
                 return updatedColumn
             else:
                 if code == "case":
-                    return tableNames[0] + "[" + colName + "]"
+                    return tableNames[0] + "['" + colName + "']"
                 return colName
         else:
-            return '"' + colName + '"'
+            if code == "case":
+                if colName in ['true', 'false']:
+                    if colName == "true": colName = "True"
+                    elif colName == "false": colName = "False"
+                    return colName
+                return '"' + colName + '"'
+            else:
+                return '"' + colName + '"'
     elif type(colName) == str and "." in colName:
         colName, tableNum = cleanColumnName(colName, tablesAliases, tableColumnsDict, tableNames)
         if code == "case":
-            return tableNames[0] + "[" + colName + "]"
+            return tableNames[0] + "['" + colName + "']"
     elif type(colName) == list:
         return str(tuple(colName))
     return colName
 
-def performAction(operator, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases):
-    lhs = renameColName(columnList, lhs, tableColumnsDict, tableNames, tablesAliases)
-    rhs = renameColName(columnList, rhs, tableColumnsDict, tableNames, tablesAliases)
-    if type(lhs) != str and type(lhs) != int: lhs = "'" + str(lhs) + "'"
-    if type(rhs) != str and type(rhs) != int: rhs = "'" + str(rhs) + "'"
-    if operator == "in":
-        return str(lhs) + " in " + str(rhs)
-    elif operator == "eq":
-        return str(lhs) + " == " + str(rhs)
+def performAction(operator, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases, code):
+    lhs = renameColName(columnList, lhs, tableColumnsDict, tableNames, tablesAliases, code)
+    rhs = renameColName(columnList, rhs, tableColumnsDict, tableNames, tablesAliases, code)
+    if code != "case":
+        if type(lhs) != str and type(lhs) != int: lhs = "'" + str(lhs) + "'"
+        if type(rhs) != str and type(rhs) != int: rhs = "'" + str(rhs) + "'"
+    else:
+        if type(lhs) != str and type(lhs) != int: lhs = str(lhs)
+        if type(rhs) != str and type(rhs) != int: rhs = str(rhs)
+    if operator in OPERATORS:
+        operatorSymbol = operatorSymbols[operator]
+        return str(lhs) + operatorSymbol + str(rhs)
     return
 
 def handleOperator(operator, conditionList):
+    # print("conditions list: ", conditionList)
     script = ""
     if conditionList != None:
-        if operator == "and":
-            for condition in conditionList:
-                script += condition
-                if condition != conditionList[-1]:
-                    script += " & "
-            return script
-        elif operator == "or":
-            for condition in conditionList:
-                script += condition
-                if condition != conditionList[-1]:
-                    script += " | "
+        if operator in OPERATORS:
+            operatorSymbol = operatorSymbols[operator]
+            script = operatorSymbol.join(conditionList)
             return script
     return []
 
-def handleWhereClause(dataStructure, columnList, tableColumnsDict, tableNames, tablesAliases):
+def handleWhereClause(dataStructure, columnList, tableColumnsDict, tableNames, tablesAliases, code = ""):
     if type(dataStructure) == dict:
         key = list(dataStructure.keys())[0]
         value = dataStructure[key]
         if type(value[0]) == str:
             lhs = value[0]
             rhs = value[1]
-            script = performAction(key, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases)
+            script = performAction(key, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases, code)
             return script
         else:
-            whereConditions = whereList(value, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases)
+            whereConditions = whereList(value, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases, code)
             script = handleOperator(key, whereConditions)
     else:
-        script = whereList(dataStructure, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases)
-
+        script = whereList(dataStructure, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases, code)
     return script
 
-def whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases):
+
+def whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases, code):
     if index >= len(listData):
         return
     else:
-        scriptList.append(handleWhereClause(listData[index], columnList, tableColumnsDict, tableNames, tablesAliases))
+        scriptList.append(handleWhereClause(listData[index], columnList, tableColumnsDict, tableNames, tablesAliases, code))
         index = index + 1
-        whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases)
+        whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases, code)
     return scriptList
 
 
@@ -253,11 +257,42 @@ def udfIter(dataStructure, columnList, columnAlias, tableNames, tableAliases, ta
     return udfList, dataStructure
 
 
-# def handleCases(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, udfList):
-#     if type(dataStructure) == dict:
-#         dictValues = list(dataStructure.values())[0]
-#         dictKeys = list(dataStructure.values())[0]
-#         if "then" in dictKeys and type(dataStructure['then']) != dict:
+def handleCases(dataStructure, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, condList, resList):
+    if type(dataStructure) == dict:
+        dictKeys = dataStructure.keys()
+        if "then" in dictKeys and type(dataStructure['then']) != dict:
+            conditions = dataStructure['when']
+            script = handleWhereClause(conditions, columnList, tableColumnsDict, tableNames, tableAliases, "case")
+            condList.append(script)
+            result = renameColName(columnList, dataStructure['then'], tableColumnsDict, tableNames, tableAliases, "case")
+            resList.append(result)
+        elif "then" in dictKeys and type(dataStructure['then']) == dict:
+            condList, resList = handleCases(dataStructure['then'], columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, condList,
+                        resList)
+            whenScript = handleWhereClause(dataStructure['when'], columnList, tableColumnsDict, tableNames, tableAliases, "case")
+            newCondList = []
+            for cond in condList:
+                script = handleOperator("and", [whenScript, cond])
+                newCondList.append(script)
+            newCondList.append(whenScript)
+            condList = newCondList
+            return condList, resList
+        elif "case" in dictKeys:
+            condList, resList = caseIter(dataStructure['case'], 0, columnList, columnAlias, tableNames, tableAliases,
+                                         tableColumnsDict, condList, resList)
+    elif type(dataStructure) == list:
+        condList, resList = caseIter(dataStructure, 0, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, condList, resList)
+    elif type(dataStructure) == str:
+        result = renameColName(columnList, dataStructure, tableColumnsDict, tableNames, tableAliases, "case")
+        resList.append(result)
+    return condList, resList
 
-        # if type(dictValue) == list and type(dictValue) == str:
-        #     if dictKey in OPERATORS:
+
+def caseIter(dataStructure, index, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, condList, resList):
+    if index >= len(dataStructure):
+        return condList, resList
+    else:
+        condList, resList = handleCases(dataStructure[index], columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, condList, resList)
+        index = index + 1
+        condList, resList = caseIter(dataStructure, index, columnList, columnAlias, tableNames, tableAliases, tableColumnsDict, condList, resList)
+    return condList, resList
