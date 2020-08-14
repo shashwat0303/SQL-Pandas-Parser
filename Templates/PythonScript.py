@@ -71,6 +71,8 @@ class PythonScript():
     def joinPandasDFs(self):
         finalScript = []
         fromCols = self.queryObject.queryDict['from']
+        if type(fromCols) != list:
+            fromCols = [fromCols]
         if len(fromCols) > 1:
             baseTable = self.tableNames[0]
             for tableDetails in fromCols[1:]:
@@ -330,6 +332,8 @@ if __name__ == '__main__':
     # query = """CREATE TABLE ABC1 AS (SELECT * , SUM(ABC) as new_col FROM A GROUP BY ALPHA)"""
 
     # query = """SELECT * , SUM(ABC) as new_col FROM table GROUP BY ALPHA"""
+
+    query = """select sum(col) as a from table"""
 
     p = PythonScript(query)
     # print(p.sqlQuery)
