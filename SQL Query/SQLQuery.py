@@ -18,8 +18,10 @@ class SQLQuery():
         self.sqlQuery = sqlQuery.lower()
         self.cleanQuery()
         self.queryDict = parse(self.sqlQuery)
+        print(self.queryDict)
         self.identifyTables()
         self.identifyColumns()
+        print(self.tableColumnsDict)
         self.queryDict = parse(self.sqlQuery)
 
     #
@@ -86,8 +88,10 @@ class SQLQuery():
     #
     def identifyColumns(self):
         selectCols = self.queryDict['select']
-        print("select cols: ",selectCols)
+        if type(selectCols) != list:
+            selectCols = [selectCols]
         for columDetails in selectCols:
+            print("col details:",columDetails)
             if type(columDetails) == str:
                 columDetails = {'value' : columDetails}
             columnAlias = ""
@@ -100,7 +104,6 @@ class SQLQuery():
                             self.tableNames[0], "")
 
         fromCols = self.queryDict['from']
-        print("from cols: ", fromCols)
         if type(fromCols) == list:
             for columDetails in fromCols[1:]:
                 columDetails = columDetails['on']
@@ -168,7 +171,6 @@ class SQLQuery():
         tableDetails = self.queryDict['from']
         if type(tableDetails) == str:
             tableDetails = [{'value' : tableDetails}]
-        print("table details : ", tableDetails)
         for tableDetail in tableDetails:
             tableAlias = ""
             tableName = ""
@@ -248,7 +250,7 @@ if __name__ == '__main__':
     # r.seed(23)
 
     a = SQLQuery(query)
-    print(a.queryDict['where'])
+    # print(a.queryDict['where'])
     # for b in a.queryDict['where']['and']:
     #     print(b)
 
