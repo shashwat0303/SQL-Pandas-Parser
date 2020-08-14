@@ -1,3 +1,8 @@
+from Utils import *
+from moz_sql_parser import parse
+import re
+
+
 class SQLQuery():
 
     columnList = []
@@ -7,11 +12,14 @@ class SQLQuery():
     tableColumnsDict = {}
     createTable = False
     insertTable = False
-    joinClauses = ['join', 'left join', 'inner join', 'full outer join', 'right join']
+    joinClauses = ['join', 'left join', 'inner join', 'full outer join', 'right']
 
     def __init__(self, sqlQuery):
         self.sqlQuery = sqlQuery.lower()
         self.cleanQuery()
+        self.queryDict = parse(self.sqlQuery)
+        self.identifyTables()
+        self.identifyColumns()
         self.queryDict = parse(self.sqlQuery)
 
     #
@@ -36,7 +44,7 @@ class SQLQuery():
                 self.createTableAlias = splits[-1]
                 self.createTable = True
                 self.sqlQuery = self.sqlQuery.replace(createClause, "")
-                if "(" == createClause.split()[-2]:
+                if "(" in createClause:
                     self.sqlQuery = "(select " + self.sqlQuery
                     closingBracketIndex = bracketStringIndex(self.sqlQuery, 0)
                     self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
@@ -54,7 +62,7 @@ class SQLQuery():
                 self.insertTableAlias = cleanTableName(splits[-1])
                 self.insertTable = True
                 self.sqlQuery = self.sqlQuery.replace(insertClause, "")
-                if "(" == insertClause.split()[-2]:
+                if "(" in insertClause:
                     self.sqlQuery = "(select " + self.sqlQuery
                     closingBracketIndex = bracketStringIndex(self.sqlQuery, 0)
                     self.sqlQuery = self.sqlQuery[1:closingBracketIndex].strip()
@@ -78,34 +86,48 @@ class SQLQuery():
     #
     def identifyColumns(self):
         selectCols = self.queryDict['select']
+        print("select cols: ",selectCols)
         for columDetails in selectCols:
+            if type(columDetails) == str:
+                columDetails = {'value' : columDetails}
             columnAlias = ""
             if "name" in columDetails.keys(): columnAlias = columDetails['name']
             if type(columDetails['value']) == str:
                 columnName = columDetails['value']
                 addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], columnAlias)
             elif type(columDetails['value']) == dict:
-                exploreDict(list(columDetails.values())[0], self.tableColumnsDict, self.tableAliases, self.tableNames[0], columnAlias)
+                exploreDict(list(columDetails.values())[0], self.tableColumnsDict, self.tableAliases,
+                            self.tableNames[0], "")
 
         fromCols = self.queryDict['from']
-        for columDetails in fromCols[1:]:
-            columDetails = columDetails['on']
-            exploreDict(list(columDetails.values())[0], self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
+        print("from cols: ", fromCols)
+        if type(fromCols) == list:
+            for columDetails in fromCols[1:]:
+                columDetails = columDetails['on']
+                exploreDict(list(columDetails.values())[0], self.tableColumnsDict, self.tableAliases, self.tableNames[0],
+                            "")
 
-        groupCols = self.queryDict['groupby']
-        for columDetails in groupCols:
-            columnName = columDetails['value']
-            # if columnName not in self.columnList: self.columnList.append(columnName)
-            addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
+        if "groupby" in self.queryDict.keys():
+            groupCols = self.queryDict['groupby']
+            if type(groupCols) != list:
+                groupCols = [groupCols]
+            for columDetails in groupCols:
+                columnName = columDetails['value']
+                # if columnName not in self.columnList: self.columnList.append(columnName)
+                addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
 
-        orderCols = self.queryDict['orderby']
-        for columDetails in orderCols:
-            columnName = columDetails['value']
-            addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
-            # if columnName not in self.columnList: self.columnList.append(columnName)
+        if "orderby" in self.queryDict.keys():
+            orderCols = self.queryDict['orderby']
+            if type(orderCols) != list:
+                orderCols = [orderCols]
+            for columDetails in orderCols:
+                columnName = columDetails['value']
+                addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
+                # if columnName not in self.columnList: self.columnList.append(columnName)
 
-        whereCols = self.queryDict['where']
-        exploreDict(list(whereCols.values())[0], self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
+        if "where" in self.queryDict.keys():
+            whereCols = self.queryDict['where']
+            exploreDict(list(whereCols.values())[0], self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
 
         tables = self.tableColumnsDict.keys()
         for table in tables:
@@ -126,8 +148,6 @@ class SQLQuery():
                 exploreDict(list(columDetails.values())[0], self.columnList)
         return
 
-
-
     #
     # A helper method that helps add a column to the tableColumnsDict
     # to better structure the query internally within this class
@@ -146,6 +166,9 @@ class SQLQuery():
     #
     def identifyTables(self):
         tableDetails = self.queryDict['from']
+        if type(tableDetails) == str:
+            tableDetails = [{'value' : tableDetails}]
+        print("table details : ", tableDetails)
         for tableDetail in tableDetails:
             tableAlias = ""
             tableName = ""
@@ -170,22 +193,19 @@ class SQLQuery():
             if type(col['value']) == dict and "case" in col['value'].keys():
                 columnName = col['name']
                 caseStatement = col['value']
-                statementDict = {caseStatement : columnName}
+                statementDict = {caseStatement: columnName}
                 caseStatements.append(statementDict)
         return caseStatements
 
+
 if __name__ == '__main__':
+    # from moz_sql_parser import parse
+    # import re
 
-    from moz_sql_parser import parse
-    from Utils import *
-    import re
-    import random as r
-    from itertools import groupby
-
-    query = """CREATE TABLE somethingelse AS  ( SELECT marsha, stay_year, coalesce( crossover_rms,0) AS CO_RN_Goal, 
+    query = """CREATE TABLE somethingelse AS  ( SELECT marsha, stay_year, coalesce( crossover_rms,0) AS CO_RN_Goal,
                 case when tab1.a=tab2.b then case when tab.e=i0 then true else false end when c=d then true else false end as newcol,
                 coalesce( ( crossover_rms*crossover_gadr),0) AS CO_Rev_Goal, def_rms AS Def_OTB
-                FROM AW_TGT_BUS_DBO.OY_ANNUALCROSSOVER WHERE stay_year < &YEARNXT3 AND ASOF_YRMO=&CURYRPD 
+                FROM AW_TGT_BUS_DBO.OY_ANNUALCROSSOVER WHERE stay_year < &YEARNXT3 AND ASOF_YRMO=&CURYRPD
                 ORDER BY marsha, stay_year);"""
 
     query = """create table newTable SELECT count(B.alpha) as alpha1,
@@ -204,12 +224,12 @@ if __name__ == '__main__':
             A.Avg_Bkd
             FROM tableA A
             left join tableB B
-            on A.marsha = B.marsha and A.marsha1 = B.marsha1
+            on A.marsha = B.marsha and A.marsha1 = B.marsha1 or a.marsha2<=b.marsha2
             outer join tableC C
             on A.marsha = C.marsha and A.marsha1 = C.marsha1
             Where A.Target=1
             and C.Target in (1,2,3,4)
-            and c.Avg_Bkd="ABCD"
+            or c.Avg_Bkd="ABCD"
         	group by
             crossover_rms,
         	crossover_gadr,marsha,
@@ -228,9 +248,9 @@ if __name__ == '__main__':
     # r.seed(23)
 
     a = SQLQuery(query)
-    # a.queryDict['select']
-    for b in a.queryDict['select']:
-        print(b)
+    print(a.queryDict['where'])
+    # for b in a.queryDict['where']['and']:
+    #     print(b)
 
     # exploreDict()
 
