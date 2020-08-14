@@ -155,6 +155,8 @@ class PythonScript():
         finalScript = []
         selectCols = self.queryObject.queryDict['select']
         for col in selectCols:
+            if type(col) == str:
+                col = {'value' : col}
             if type(col['value']) == dict and "case" not in col['value'].keys():
                 dataStructure = col
                 details = dataStructure['value']
@@ -178,6 +180,8 @@ class PythonScript():
         baseTable = self.tableNames[0]
         selectCols = self.queryObject.queryDict['select']
         for col in selectCols:
+            if type(col) == str:
+                col = {'value' : col}
             if type(col['value']) == dict and "case" in col['value'].keys():
                 dataStructure = col
                 columnAlias = col['name']
