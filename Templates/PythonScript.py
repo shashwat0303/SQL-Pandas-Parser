@@ -9,8 +9,6 @@ class PythonScript():
     def __init__(self, sqlQuery):
         self.sqlQuery = sqlQuery
         self.queryObject = SQLQuery(sqlQuery)
-        # self.queryObject.identifyTables()
-        # self.queryObject.identifyColumns()
         self.tableNames = self.queryObject.tableNames
         self.tableColumnsDict = self.queryObject.tableColumnsDict
         self.tableAliases = self.queryObject.tableAliases
@@ -40,8 +38,11 @@ class PythonScript():
         tables = self.tableColumnsDict.keys()
         for table in tables:
             columns = list(self.tableColumnsDict[table].keys())
-            sqlScript = "select " + ", ".join(columns) + " from " + table
-            script = table + " = pd.read_sql(" + sqlScript + ")"
+            if "*" in columns:
+                sqlScript = "select * from " + table
+            else:
+                sqlScript = "select " + ", ".join(columns) + " from " + table
+            script = table + " = pd.read_sql('" + sqlScript + "')"
             finalScript.append(script)
         return finalScript
 
@@ -101,11 +102,13 @@ class PythonScript():
     # where clause as mentioned in the SQL Query
     #
     def whereClausePandasDF(self):
+        whereScript = []
         baseTable = self.tableNames[0]
-        whereCondition = self.queryObject.queryDict['where']
-        script = handleWhereClause(whereCondition, self.queryObject.columnList, self.tableColumnsDict, self.tableNames,
-                                   self.tableAliases)
-        whereScript = baseTable + " = " + baseTable + ".query('" + script + "')"
+        if "where" in self.queryObject.queryDict.keys():
+            whereCondition = self.queryObject.queryDict['where']
+            script = handleWhereClause(whereCondition, self.queryObject.columnList, self.tableColumnsDict, self.tableNames,
+                                       self.tableAliases)
+            whereScript = baseTable + " = " + baseTable + ".query('" + script + "')"
         return whereScript
 
     #
@@ -113,15 +116,17 @@ class PythonScript():
     # as mentioned in the SQL Query
     #
     def groupPandasDFs(self):
-        groupCols = self.queryObject.queryDict['groupby']
-        columns = []
-        baseTable = self.tableNames[0]
-        for col in groupCols:
-            columnName = col['value']
-            updatedColumn, tabelNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict,
-                                                      self.tableNames)
-            columns.append(updatedColumn)
-        script = baseTable + " = " + baseTable + ".groupby(by = " + str(columns) + ")"
+        script = ""
+        if "grouby" in self.queryObject.queryDict.keys():
+            groupCols = self.queryObject.queryDict['groupby']
+            columns = []
+            baseTable = self.tableNames[0]
+            for col in groupCols:
+                columnName = col['value']
+                updatedColumn, tabelNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict,
+                                                          self.tableNames)
+                columns.append(updatedColumn)
+            script = baseTable + " = " + baseTable + ".groupby(by = " + str(columns) + ")"
         return script
 
     #
@@ -129,33 +134,39 @@ class PythonScript():
     # as mentioned in the SQL Query
     #
     def orderPandasDFs(self):
-        groupCols = self.queryObject.queryDict['orderby']
-        columns = []
-        baseTable = self.tableNames[0]
-        for col in groupCols:
-            columnName = col['value']
-            updatedColumn, tableNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict,
-                                                      self.tableNames)
-            columns.append(updatedColumn)
-        script = baseTable + ".sort_values(by = " + str(columns) + ", inplace = True)"
+        script = ""
+        if "orderby" in self.queryObject.queryDict.keys():
+            groupCols = self.queryObject.queryDict['orderby']
+            columns = []
+            baseTable = self.tableNames[0]
+            for col in groupCols:
+                columnName = col['value']
+                updatedColumn, tableNum = cleanColumnName(columnName, self.tableAliases, self.tableColumnsDict,
+                                                          self.tableNames)
+                columns.append(updatedColumn)
+            script = baseTable + ".sort_values(by = " + str(columns) + ", inplace = True)"
         return script
 
     #
     # This methods identifies nested UDFs if any within the select clause
     # and returns an equivalent pandas script for the same
     #
-    def handleUDFStatements(self, dataStructure):
+    def handleUDFStatements(self):
         finalScript = []
-        details = dataStructure['value']
-        columnAlias = dataStructure['name']
-        udfList = handleUDFs(details, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases,
-                             self.tableColumnsDict, [])
-        for udf in udfList:
-            key = list(udf.keys())[0]
-            colList = udf[key]
-            script = udfScript(key, colList, self.queryObject.columnList, columnAlias, self.tableNames,
-                               self.tableAliases, self.tableColumnsDict)
-            finalScript.append(script)
+        selectCols = self.queryObject.queryDict['select']
+        for col in selectCols:
+            if type(col['value']) == dict and "case" not in col['value'].keys():
+                dataStructure = col
+                details = dataStructure['value']
+                columnAlias = dataStructure['name']
+                udfList = handleUDFs(details, self.queryObject.columnList, columnAlias, self.tableNames, self.tableAliases,
+                                     self.tableColumnsDict, [])
+                for udf in udfList:
+                    key = list(udf.keys())[0]
+                    colList = udf[key]
+                    script = udfScript(key, colList, self.queryObject.columnList, columnAlias, self.tableNames,
+                                       self.tableAliases, self.tableColumnsDict)
+                    finalScript.append(script)
         return finalScript
 
     #
@@ -195,54 +206,58 @@ class PythonScript():
         finalScript.append(extraLine)
 
         renameScripts = self.renameColumns()
-        for renameScript in renameScripts:
-            finalScript.append(renameScript)
-        finalScript.append(extraLine)
+        if renameScripts != []:
+            for renameScript in renameScripts:
+                finalScript.append(renameScript)
+            finalScript.append(extraLine)
 
         mergeScripts = self.joinPandasDFs()
-        for mergeScript in mergeScripts:
-            finalScript.append(mergeScript)
-        finalScript.append(extraLine)
+        if mergeScripts != []:
+            for mergeScript in mergeScripts:
+                finalScript.append(mergeScript)
+            finalScript.append(extraLine)
 
         groupScripts = self.groupPandasDFs()
-        for groupScript in groupScripts:
-            finalScript.append(groupScript)
-        finalScript.append(extraLine)
+        if groupScripts != "":
+            finalScript.append(groupScripts)
+            finalScript.append(extraLine)
 
         udfs = self.handleUDFStatements()
-        for udf in udfs:
-            finalScript.append(udf)
-        finalScript.append(extraLine)
+        if udfs != []:
+            for udf in udfs:
+                finalScript.append(udf)
+            finalScript.append(extraLine)
 
         cases = self.handleCaseStatements()
-        for case in cases:
-            finalScript.append(case)
-        finalScript.append(extraLine)
+        if cases != []:
+            for case in cases:
+                finalScript.append(case)
+            finalScript.append(extraLine)
 
         whereClauses = self.whereClausePandasDF()
-        for whereClause in whereClauses:
-            finalScript.append(whereClause)
-        finalScript.append(extraLine)
+        if whereClauses != []:
+            for whereClause in whereClauses:
+                finalScript.append(whereClause)
+            finalScript.append(extraLine)
 
         orderScripts = self.orderPandasDFs()
-        for orderScript in orderScripts:
-            finalScript.append(orderScript)
-        finalScript.append(extraLine)
+        if orderScripts != "":
+            finalScript.append(orderScripts)
+            finalScript.append(extraLine)
 
         createScripts = self.createTableScript()
-        for createScript in createScripts:
-            finalScript.append(createScript)
-        finalScript.append(extraLine)
+        if createScripts != []:
+            for createScript in createScripts:
+                finalScript.append(createScript)
+            finalScript.append(extraLine)
 
         insertScripts = self.insertTableScript()
-        for insertScript in insertScripts:
-            finalScript.append(insertScript)
-        finalScript.append(extraLine)
+        if insertScripts != []:
+            for insertScript in insertScripts:
+                finalScript.append(insertScript)
+            finalScript.append(extraLine)
 
         return finalScript
-
-
-
 
     def createTableScript(self):
         finalScript = []
@@ -307,6 +322,17 @@ if __name__ == '__main__':
             	order by
                 A.marsha,A.Avg_Bkd"""
 
+
+    query = """CREATE TABLE ABC1 AS (SELECT * , SUM(ABC) as new_col FROM A GROUP BY ALPHA)"""
+
+    # query = """SELECT * , SUM(ABC) as new_col FROM table GROUP BY ALPHA"""
+
     p = PythonScript(query)
-    for a in p.handleCaseStatements():
-        print(a)
+    print(p.sqlQuery)
+    print(p.tableNames)
+    print(p.tableAliases)
+    print(p.tableColumnsDict)
+
+    print(p.readPandasDFs())
+    # for a in p.handleCaseStatements():
+    #     print(a)
