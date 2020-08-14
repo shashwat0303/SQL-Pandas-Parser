@@ -18,10 +18,8 @@ class SQLQuery():
         self.sqlQuery = sqlQuery.lower()
         self.cleanQuery()
         self.queryDict = parse(self.sqlQuery)
-        print(self.queryDict)
         self.identifyTables()
         self.identifyColumns()
-        print(self.tableColumnsDict)
         self.queryDict = parse(self.sqlQuery)
 
     #
@@ -91,7 +89,6 @@ class SQLQuery():
         if type(selectCols) != list:
             selectCols = [selectCols]
         for columDetails in selectCols:
-            print("col details:",columDetails)
             if type(columDetails) == str:
                 columDetails = {'value' : columDetails}
             columnAlias = ""
@@ -116,7 +113,6 @@ class SQLQuery():
                 groupCols = [groupCols]
             for columDetails in groupCols:
                 columnName = columDetails['value']
-                # if columnName not in self.columnList: self.columnList.append(columnName)
                 addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
 
         if "orderby" in self.queryDict.keys():
@@ -126,7 +122,6 @@ class SQLQuery():
             for columDetails in orderCols:
                 columnName = columDetails['value']
                 addColumnToTable(columnName, self.tableColumnsDict, self.tableAliases, self.tableNames[0], "")
-                # if columnName not in self.columnList: self.columnList.append(columnName)
 
         if "where" in self.queryDict.keys():
             whereCols = self.queryDict['where']

@@ -60,8 +60,11 @@ class PythonScript():
                 columnAlias = self.tableColumnsDict[table][column]
                 if columnAlias != "":
                     renameDict[column] = columnAlias
-            script = table + " = " + table + ".rename(columns = " + str(renameDict) + ")"
-            finalScript.append(script)
+            if len(renameDict.keys()) > 0:
+                script = table + " = " + table + ".rename(columns = " + str(renameDict) + ")"
+                finalScript.append(script)
+            else:
+                continue
         return finalScript
 
     #
@@ -80,7 +83,6 @@ class PythonScript():
                 leftCols = []
                 rightCols = []
                 listOfCols = joinStatement(conditionsDict, [])
-                print(listOfCols)
                 for cols in listOfCols:
                     columnNameA, tableNumA = cleanColumnName(cols[0], self.tableAliases, self.tableColumnsDict,
                                                              self.tableNames)
@@ -105,7 +107,7 @@ class PythonScript():
     # where clause as mentioned in the SQL Query
     #
     def whereClausePandasDF(self):
-        whereScript = []
+        whereScript = ""
         baseTable = self.tableNames[0]
         if "where" in self.queryObject.queryDict.keys():
             whereCondition = self.queryObject.queryDict['where']
@@ -333,7 +335,7 @@ if __name__ == '__main__':
 
     # query = """SELECT * , SUM(ABC) as new_col FROM table GROUP BY ALPHA"""
 
-    query = """select sum(col) as a from table"""
+    query = """select col1 as c, col2 d, sum(col) as a from table"""
 
     p = PythonScript(query)
     # print(p.sqlQuery)

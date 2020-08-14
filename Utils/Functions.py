@@ -74,9 +74,6 @@ def cleanColumnName(columName, tablesAliases, tableColumnsDict, tableNames):
         columnAlias = tableColumnsDict[tableName][columName]
     else:
         tableName = tableNames[0]
-        print("dict is:", tableColumnsDict)
-        print("column is:", columName)
-        print("table is:", tableName)
         columnAlias = tableColumnsDict[tableName][columName]
     if columnAlias != "":
         return columnAlias, tableNames.index(tableName)
@@ -89,7 +86,6 @@ def joinStatement(dataStructure, listOfCols):
         if len(dataStructure.keys()) == 1 and list(dataStructure.keys())[0] in equalityOperators:
             operator = list(dataStructure.keys())[0]
             columns = dataStructure[operator]
-            print("Columns", columns)
             listOfCols.append(columns)
         else:
             joinStatement(list(dataStructure.values())[0], listOfCols)
@@ -163,7 +159,6 @@ def renameColName(columnList, colName, tableColumnsDict, tableNames, tablesAlias
     return colName
 
 def performAction(operator, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases, code):
-    print("operator: ", operator)
     lhs = renameColName(columnList, lhs, tableColumnsDict, tableNames, tablesAliases, code)
     rhs = renameColName(columnList, rhs, tableColumnsDict, tableNames, tablesAliases, code)
     if code != "case":
@@ -178,12 +173,6 @@ def performAction(operator, lhs, rhs, columnList, tableColumnsDict, tableNames, 
     return
 
 def handleOperator(operator, conditionList):
-    # print("conditions list: ", conditionList)
-    print("operator: ",operator)
-    print("operator symbol: ", operatorSymbols[operator])
-    print("condition list: ", conditionList)
-    print("condition list: ", operatorSymbols[operator].join(conditionList))
-    script = ""
     if conditionList != None:
         if operator in OPERATORS:
             operatorSymbol = operatorSymbols[operator]
@@ -199,7 +188,6 @@ def handleWhereClause(dataStructure, columnList, tableColumnsDict, tableNames, t
             lhs = value[0]
             rhs = value[1]
             script = performAction(key, lhs, rhs, columnList, tableColumnsDict, tableNames, tablesAliases, code)
-            print("inter sscript: ",script)
             return script
         else:
             whereConditions = whereList(value, 0, [], columnList, tableColumnsDict, tableNames, tablesAliases, code)
@@ -213,9 +201,7 @@ def whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNa
     if index >= len(listData):
         return
     else:
-        print("data struct for list[index]: ", listData[index])
         scriptList.append(handleWhereClause(listData[index], columnList, tableColumnsDict, tableNames, tablesAliases, code))
-        print("inter sscript list: ", scriptList)
         index = index + 1
         whereList(listData, index, scriptList, columnList, tableColumnsDict, tableNames, tablesAliases, code)
     return scriptList
