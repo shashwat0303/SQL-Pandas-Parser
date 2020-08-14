@@ -78,6 +78,7 @@ class PythonScript():
                 leftCols = []
                 rightCols = []
                 listOfCols = joinStatement(conditionsDict, [])
+                print(listOfCols)
                 for cols in listOfCols:
                     columnNameA, tableNumA = cleanColumnName(cols[0], self.tableAliases, self.tableColumnsDict,
                                                              self.tableNames)
@@ -239,9 +240,8 @@ class PythonScript():
             finalScript.append(extraLine)
 
         whereClauses = self.whereClausePandasDF()
-        if whereClauses != []:
-            for whereClause in whereClauses:
-                finalScript.append(whereClause)
+        if whereClauses != "":
+            finalScript.append(whereClauses)
             finalScript.append(extraLine)
 
         orderScripts = self.orderPandasDFs()
@@ -327,16 +327,19 @@ if __name__ == '__main__':
                 A.marsha,A.Avg_Bkd"""
 
 
-    query = """CREATE TABLE ABC1 AS (SELECT * , SUM(ABC) as new_col FROM A GROUP BY ALPHA)"""
+    # query = """CREATE TABLE ABC1 AS (SELECT * , SUM(ABC) as new_col FROM A GROUP BY ALPHA)"""
 
     # query = """SELECT * , SUM(ABC) as new_col FROM table GROUP BY ALPHA"""
 
     p = PythonScript(query)
-    print(p.sqlQuery)
-    print(p.tableNames)
-    print(p.tableAliases)
-    print(p.tableColumnsDict)
+    # print(p.sqlQuery)
+    # print(p.tableNames)
+    # print(p.tableAliases)
+    # print(p.tableColumnsDict)
 
-    print(p.readPandasDFs())
+    for a in p.buildPandasScript():
+        print(a)
+
+    # print(p.readPandasDFs())
     # for a in p.handleCaseStatements():
     #     print(a)
